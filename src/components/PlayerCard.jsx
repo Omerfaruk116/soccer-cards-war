@@ -1,4 +1,6 @@
-import { rarityNames } from "../data/players";
+import {
+  rarityNames,
+} from "../data/players";
 
 function PlayerCard({
   player,
@@ -6,19 +8,42 @@ function PlayerCard({
   onClick,
   compact = false,
   price = null,
-  currency = "coin",
+  currencyIcon = "🪙",
+  disabled = false,
 }) {
+  const initials =
+    player.name
+      .split(" ")
+      .slice(0, 2)
+      .map(
+        (part) =>
+          part[0]
+      )
+      .join("")
+      .toUpperCase();
+
   return (
     <button
       type="button"
       className={`
         player-card
         rarity-${player.rarity}
-        ${selected ? "player-selected" : ""}
-        ${compact ? "player-card-compact" : ""}
+        ${
+          selected
+            ? "player-selected"
+            : ""
+        }
+        ${
+          compact
+            ? "player-card-compact"
+            : ""
+        }
       `}
       onClick={onClick}
+      disabled={disabled}
     >
+      <div className="player-card-shine" />
+
       <div className="player-card-top">
         <div>
           <div className="player-overall">
@@ -35,8 +60,15 @@ function PlayerCard({
         </div>
       </div>
 
-      <div className="player-figure">
-        {player.custom ? "👤" : "⚽"}
+      <div
+        className="player-portrait"
+        aria-hidden="true"
+      >
+        <span>
+          {player.custom
+            ? "★"
+            : initials}
+        </span>
       </div>
 
       <div className="player-name">
@@ -44,7 +76,11 @@ function PlayerCard({
       </div>
 
       <div className="player-rarity">
-        {rarityNames[player.rarity]}
+        {
+          rarityNames[
+            player.rarity
+          ]
+        }
       </div>
 
       {player.custom && (
@@ -61,8 +97,10 @@ function PlayerCard({
 
       {price !== null && (
         <div className="player-price">
-          {currency === "street" ? "🟠" : "🪙"}{" "}
-          {price.toLocaleString()}
+          {currencyIcon}{" "}
+          {Number(
+            price
+          ).toLocaleString()}
         </div>
       )}
     </button>

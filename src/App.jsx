@@ -1,241 +1,423 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import PlayerCard from "./components/PlayerCard";
 
-import "./career.css";
-import "./mobile.css";
-
 import {
-  positions,
-  generateStarterPlayers,
-  generateMarketPlayers,
+  calculateTrainingCost,
+  careerLeagues,
   createCustomPlayer,
-  generateStreetShop,
+  eventConfigs,
+  generateEventShop,
+  generateMarketPlayers,
   generateOpponentDeck,
   generatePlayer,
+  generateStarterPlayers,
+  getEventConfig,
   getRarity,
+  positions,
+  randomItem,
+  shuffle,
+  trainingPlans,
 } from "./data/players";
 
-const SAVE_KEY = "soccer-cards-war-save-v2";
+const SAVE_KEY =
+  "soccer-cards-war-save-v4";
 
-const trainingPlans = [
-  {
-    id: "basic",
-    title: "Temel Antrenman",
-    duration: "1 Saat",
-    hours: 1,
-    gain: 1,
-    cost: 200,
-  },
-  {
-    id: "intense",
-    title: "Yoğun Antrenman",
-    duration: "3 Saat",
-    hours: 3,
-    gain: 2,
-    cost: 500,
-  },
-  {
-    id: "camp",
-    title: "Gelişim Kampı",
-    duration: "8 Saat",
-    hours: 8,
-    gain: 4,
-    cost: 1200,
-  },
-];
+const SAVE_VERSION = 4;
 
-const careerLeagues = [
-  {
-    name: "Mahalle Ligi",
-    min: 10,
-    max: 30,
-    matches: 10,
-  },
-  {
-    name: "Amatör Lig",
-    min: 25,
-    max: 40,
-    matches: 10,
-  },
-  {
-    name: "Bölgesel Lig",
-    min: 35,
-    max: 50,
-    matches: 10,
-  },
-  {
-    name: "Şehir Ligi",
-    min: 45,
-    max: 60,
-    matches: 10,
-  },
-  {
-    name: "Profesyonel Lig",
-    min: 55,
-    max: 70,
-    matches: 10,
-  },
-  {
-    name: "Ulusal Lig",
-    min: 65,
-    max: 80,
-    matches: 10,
-  },
-  {
-    name: "Şampiyonlar Ligi",
-    min: 78,
-    max: 92,
-    matches: 10,
-  },
-  {
-    name: "Efsaneler Ligi",
-    min: 90,
-    max: 99,
-    matches: 10,
-  },
-];
+function createEventStates(
+  withShops = false
+) {
+  return Object.fromEntries(
+    eventConfigs.map(
+      (event, index) => [
+        event.id,
+
+        {
+          match: 1,
+
+          currency: 0,
+
+          completed: false,
+
+          shop: withShops
+            ? generateEventShop(
+                event,
+                index
+              )
+            : [],
+        },
+      ]
+    )
+  );
+}
 
 function createBlankGame() {
   return {
+    saveVersion:
+      SAVE_VERSION,
+
     clubName: "",
 
-    coins: 5000,
+    coins: 2500,
+
     gems: 25,
+
     trophies: 0,
 
     collection: [],
+
     squad: [],
 
     market: [],
-    streetShop: [],
+
+    marketCap: 30,
 
     training: null,
+
     trainingCap: 30,
 
-    street: {
-      match: 1,
-      streetCoins: 0,
-      completed: false,
-    },
+    events:
+      createEventStates(
+        false
+      ),
 
     career: {
       leagueIndex: 0,
+
       match: 1,
+
       wins: 0,
+
       completed: false,
     },
 
-    lastDailyReward: "",
+    daily: {
+      lastClaim: "",
+
+      streak: 0,
+    },
   };
 }
 
 function normalizeGame(saved) {
-  const blank = createBlankGame();
+  const blank =
+    createBlankGame();
 
-  if (!saved || typeof saved !== "object") {
+  if (
+    !saved ||
+    typeof saved !== "object"
+  ) {
     return blank;
   }
 
+  const normalizedEvents =
+    createEventStates(false);
+
+  eventConfigs.forEach(
+    (event, index) => {
+      const oldEvent =
+        saved.events?.[
+          event.id
+        ];
+
+      normalizedEvents[
+        event.id
+      ] = {
+        match: Math.max(
+          1,
+
+          oldEvent?.match ??
+            (event.id ===
+            "street"
+              ? saved.street
+                  ?.match
+              : 1) ??
+            1
+        ),
+
+        currency:
+          Math.max(
+            0,
+
+            oldEvent
+              ?.currency ??
+              (event.id ===
+              "street"
+                ? saved.street
+                    ?.streetCoins
+                : 0) ??
+              0
+          ),
+
+        completed:
+          Boolean(
+            oldEvent
+              ?.completed ??
+              (event.id ===
+              "street"
+                ? saved.street
+                    ?.completed
+                : false)
+          ),
+
+        shop:
+          Array.isArray(
+            oldEvent?.shop
+          ) &&
+          oldEvent.shop
+            .length
+            ? oldEvent.shop
+            : event.id ===
+                  "street" &&
+                Array.isArray(
+                  saved.streetShop
+                ) &&
+                saved
+                  .streetShop
+                  .length
+              ? saved.streetShop
+              : generateEventShop(
+                  event,
+                  index
+                ),
+      };
+    }
+  );
+
   return {
     ...blank,
+
     ...saved,
 
-    collection: Array.isArray(saved.collection)
-      ? saved.collection
-      : [],
+    saveVersion:
+      SAVE_VERSION,
 
-    squad: Array.isArray(saved.squad)
-      ? saved.squad
-      : [],
+    collection:
+      Array.isArray(
+        saved.collection
+      )
+        ? saved.collection
+        : [],
 
-    market: Array.isArray(saved.market)
-      ? saved.market
-      : [],
+    squad:
+      Array.isArray(
+        saved.squad
+      )
+        ? saved.squad
+        : [],
 
-    streetShop: Array.isArray(saved.streetShop)
-      ? saved.streetShop
-      : [],
+    market:
+      Array.isArray(
+        saved.market
+      )
+        ? saved.market
+        : [],
 
-    street: {
-      ...blank.street,
-      ...(saved.street || {}),
-    },
+    marketCap:
+      Number(
+        saved.marketCap
+      ) ||
+      Number(
+        saved.trainingCap
+      ) ||
+      30,
+
+    trainingCap:
+      Number(
+        saved.trainingCap
+      ) || 30,
+
+    events:
+      normalizedEvents,
 
     career: {
       ...blank.career,
-      ...(saved.career || {}),
+
+      ...(saved.career ||
+        {}),
+    },
+
+    daily: {
+      ...blank.daily,
+
+      ...(saved.daily ||
+        {}),
+
+      lastClaim:
+        saved.daily
+          ?.lastClaim ||
+        saved
+          .lastDailyReward ||
+        "",
     },
   };
 }
 
-function shuffle(array) {
-  return [...array].sort(() => Math.random() - 0.5);
-}
-
-function randomFive(players) {
-  return shuffle(players).slice(0, 5);
-}
-
-function randomItem(array) {
-  return array[Math.floor(Math.random() * array.length)];
-}
-
-function averageOverall(players) {
+function averageOverall(
+  players
+) {
   if (!players.length) {
     return 0;
   }
 
-  const total = players.reduce(
-    (sum, player) => sum + player.overall,
-    0
-  );
+  return Math.round(
+    players.reduce(
+      (
+        sum,
+        player
+      ) =>
+        sum +
+        player.overall,
 
-  return Math.round(total / players.length);
+      0
+    ) / players.length
+  );
 }
 
-function formatTime(milliseconds) {
-  if (milliseconds <= 0) {
+function randomFive(
+  players
+) {
+  return shuffle(
+    players
+  ).slice(0, 5);
+}
+
+function formatTime(
+  milliseconds
+) {
+  if (
+    milliseconds <= 0
+  ) {
     return "00:00:00";
   }
 
-  const totalSeconds = Math.floor(milliseconds / 1000);
+  const totalSeconds =
+    Math.floor(
+      milliseconds /
+        1000
+    );
 
-  const hours = Math.floor(totalSeconds / 3600);
+  const hours =
+    Math.floor(
+      totalSeconds /
+        3600
+    );
 
-  const minutes = Math.floor(
-    (totalSeconds % 3600) / 60
-  );
+  const minutes =
+    Math.floor(
+      (totalSeconds %
+        3600) /
+        60
+    );
 
-  const seconds = totalSeconds % 60;
+  const seconds =
+    totalSeconds % 60;
 
-  return [hours, minutes, seconds]
+  return [
+    hours,
+    minutes,
+    seconds,
+  ]
     .map((value) =>
-      String(value).padStart(2, "0")
+      String(
+        value
+      ).padStart(
+        2,
+        "0"
+      )
     )
     .join(":");
 }
 
+function localDateKey(
+  date = new Date()
+) {
+  const year =
+    date.getFullYear();
+
+  const month =
+    String(
+      date.getMonth() +
+        1
+    ).padStart(2, "0");
+
+  const day =
+    String(
+      date.getDate()
+    ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function dateKeyToNumber(
+  key
+) {
+  if (!key) {
+    return null;
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = key
+    .split("-")
+    .map(Number);
+
+  if (
+    !year ||
+    !month ||
+    !day
+  ) {
+    return null;
+  }
+
+  return Math.floor(
+    Date.UTC(
+      year,
+      month - 1,
+      day
+    ) / 86400000
+  );
+}
+
 function App() {
-  const [started, setStarted] = useState(false);
+  const [
+    started,
+    setStarted,
+  ] = useState(false);
 
-  const [screen, setScreen] = useState("home");
+  const [
+    screen,
+    setScreen,
+  ] = useState("home");
 
-  const [game, setGame] = useState(() => {
-    try {
-      const saved =
-        localStorage.getItem(SAVE_KEY);
+  const [
+    notice,
+    setNotice,
+  ] = useState("");
 
-      if (saved) {
-        return normalizeGame(
-          JSON.parse(saved)
-        );
-      }
-    } catch {
-      // Yeni oyun.
-    }
+  const [
+    now,
+    setNow,
+  ] = useState(
+    Date.now()
+  );
 
-    return createBlankGame();
-  });
+  const [
+    battle,
+    setBattle,
+  ] = useState(null);
+
+  const [
+    activeEventId,
+    setActiveEventId,
+  ] = useState("street");
 
   const [
     clubNameInput,
@@ -257,14 +439,64 @@ function App() {
     setTrainingPlayerId,
   ] = useState(null);
 
-  const [notice, setNotice] =
-    useState("");
+  const [
+    installPrompt,
+    setInstallPrompt,
+  ] = useState(null);
 
-  const [now, setNow] =
-    useState(Date.now());
+  const [
+    installed,
+    setInstalled,
+  ] = useState(() => {
+    if (
+      typeof window ===
+      "undefined"
+    ) {
+      return false;
+    }
 
-  const [battle, setBattle] =
-    useState(null);
+    return (
+      window.matchMedia?.(
+        "(display-mode: standalone)"
+      )?.matches ||
+      window.navigator
+        .standalone ===
+        true
+    );
+  });
+
+  const [
+    game,
+    setGame,
+  ] = useState(() => {
+    try {
+      const saved =
+        localStorage.getItem(
+          SAVE_KEY
+        );
+
+      if (saved) {
+        return normalizeGame(
+          JSON.parse(saved)
+        );
+      }
+
+      const older =
+        localStorage.getItem(
+          "soccer-cards-war-save-v2"
+        );
+
+      if (older) {
+        return normalizeGame(
+          JSON.parse(older)
+        );
+      }
+    } catch {
+      // Bozuk kayıt.
+    }
+
+    return createBlankGame();
+  });
 
   useEffect(() => {
     localStorage.setItem(
@@ -274,20 +506,70 @@ function App() {
   }, [game]);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
+    const timer =
+      setInterval(() => {
+        setNow(
+          Date.now()
+        );
+      }, 1000);
 
     return () =>
       clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    if (!game.training) {
-      return;
-    }
+    const handleInstallPrompt =
+      (event) => {
+        event.preventDefault();
 
-    if (now < game.training.endsAt) {
+        setInstallPrompt(
+          event
+        );
+      };
+
+    const handleInstalled =
+      () => {
+        setInstallPrompt(
+          null
+        );
+
+        setInstalled(true);
+
+        setNotice(
+          "Soccer Cards War telefona kuruldu."
+        );
+      };
+
+    window.addEventListener(
+      "beforeinstallprompt",
+      handleInstallPrompt
+    );
+
+    window.addEventListener(
+      "appinstalled",
+      handleInstalled
+    );
+
+    return () => {
+      window.removeEventListener(
+        "beforeinstallprompt",
+        handleInstallPrompt
+      );
+
+      window.removeEventListener(
+        "appinstalled",
+        handleInstalled
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !game.training ||
+      now <
+        game.training
+          .endsAt
+    ) {
       return;
     }
 
@@ -302,10 +584,13 @@ function App() {
       );
 
     if (!currentPlayer) {
-      setGame((previous) => ({
-        ...previous,
-        training: null,
-      }));
+      setGame(
+        (previous) => ({
+          ...previous,
+
+          training: null,
+        })
+      );
 
       return;
     }
@@ -313,8 +598,10 @@ function App() {
     const availableGain =
       Math.max(
         0,
+
         game.trainingCap -
-          currentPlayer.overall
+          currentPlayer
+            .overall
       );
 
     const actualGain =
@@ -323,42 +610,45 @@ function App() {
         availableGain
       );
 
-    setGame((previous) => ({
-      ...previous,
+    setGame(
+      (previous) => ({
+        ...previous,
 
-      collection:
-        previous.collection.map(
-          (player) => {
-            if (
-              player.id !==
-              training.playerId
-            ) {
-              return player;
+        collection:
+          previous.collection.map(
+            (player) => {
+              if (
+                player.id !==
+                training.playerId
+              ) {
+                return player;
+              }
+
+              const overall =
+                player.overall +
+                actualGain;
+
+              return {
+                ...player,
+
+                overall,
+
+                rarity:
+                  getRarity(
+                    overall
+                  ),
+              };
             }
+          ),
 
-            const newOverall =
-              player.overall +
-              actualGain;
-
-            return {
-              ...player,
-
-              overall:
-                newOverall,
-
-              rarity:
-                getRarity(newOverall),
-            };
-          }
-        ),
-
-      training: null,
-    }));
+        training: null,
+      })
+    );
 
     setNotice(
       actualGain > 0
         ? `${currentPlayer.name} antrenmanı tamamladı. +${actualGain} GEN`
-        : `${currentPlayer.name} gelişim sınırına ulaştı.`
+        : `${currentPlayer.name} mevcut gelişim sınırına ulaştı.`
     );
   }, [
     now,
@@ -374,7 +664,8 @@ function App() {
           .map((id) =>
             game.collection.find(
               (player) =>
-                player.id === id
+                player.id ===
+                id
             )
           )
           .filter(Boolean),
@@ -402,15 +693,62 @@ function App() {
         trainingPlayerId
     );
 
+  const activeEvent =
+    getEventConfig(
+      activeEventId
+    );
+
+  const activeEventIndex =
+    eventConfigs.findIndex(
+      (event) =>
+        event.id ===
+        activeEventId
+    );
+
+  const activeEventState =
+    game.events[
+      activeEventId
+    ] || {
+      match: 1,
+      currency: 0,
+      completed: false,
+      shop: [],
+    };
+
+  function showNotice(
+    message
+  ) {
+    setNotice(message);
+  }
+
   function goHome() {
     setBattle(null);
+
     setScreen("home");
+  }
+
+  function isEventUnlocked(
+    eventIndex
+  ) {
+    if (
+      eventIndex === 0
+    ) {
+      return true;
+    }
+
+    return Boolean(
+      game.events[
+        eventConfigs[
+          eventIndex - 1
+        ].id
+      ]?.completed
+    );
   }
 
   function resetGame() {
     const confirmed =
       window.confirm(
-        "Tüm Soccer Cards War ilerlemen silinecek. Kulübün, kartların, paran, antrenmanların, etkinlik ve kariyer ilerlemen sıfırlanacak. Emin misin?"
+        "Tüm Soccer Cards War ilerlemen silinecek. Emin misin?"
       );
 
     if (!confirmed) {
@@ -419,6 +757,10 @@ function App() {
 
     localStorage.removeItem(
       SAVE_KEY
+    );
+
+    localStorage.removeItem(
+      "soccer-cards-war-save-v2"
     );
 
     setGame(
@@ -435,19 +777,27 @@ function App() {
 
     setCustomName("");
 
-    setCustomPosition("ST");
+    setCustomPosition(
+      "ST"
+    );
 
-    setTrainingPlayerId(null);
+    setTrainingPlayerId(
+      null
+    );
+
+    setActiveEventId(
+      "street"
+    );
 
     setNotice("");
   }
 
   function createClub() {
-    const name =
+    const cleanName =
       clubNameInput.trim();
 
-    if (!name) {
-      setNotice(
+    if (!cleanName) {
+      showNotice(
         "Önce kulübüne bir isim ver."
       );
 
@@ -455,12 +805,20 @@ function App() {
     }
 
     const starters =
-      generateStarterPlayers(10);
+      generateStarterPlayers(
+        10
+      );
+
+    const events =
+      createEventStates(
+        true
+      );
 
     setGame({
       ...createBlankGame(),
 
-      clubName: name,
+      clubName:
+        cleanName,
 
       collection:
         starters,
@@ -477,112 +835,242 @@ function App() {
           30
         ),
 
-      streetShop:
-        generateStreetShop(),
+      events,
     });
 
     setScreen("home");
 
-    setNotice(
-      `${name} kuruldu. İlk 10 futbolcun hazır.`
+    showNotice(
+      `${cleanName} kuruldu. İlk 10 futbolcun hazır.`
     );
   }
 
   function toggleSquadPlayer(
     playerId
   ) {
-    setGame((previous) => {
-      const selected =
-        previous.squad.includes(
-          playerId
-        );
+    setGame(
+      (previous) => {
+        if (
+          previous.squad.includes(
+            playerId
+          )
+        ) {
+          return {
+            ...previous,
 
-      if (selected) {
+            squad:
+              previous.squad.filter(
+                (id) =>
+                  id !==
+                  playerId
+              ),
+          };
+        }
+
+        if (
+          previous.squad
+            .length >= 10
+        ) {
+          showNotice(
+            "Maç desten dolu. Önce bir futbolcuyu çıkar."
+          );
+
+          return previous;
+        }
+
         return {
           ...previous,
 
-          squad:
-            previous.squad.filter(
-              (id) =>
-                id !== playerId
-            ),
+          squad: [
+            ...previous.squad,
+
+            playerId,
+          ],
         };
       }
+    );
+  }
 
-      if (
-        previous.squad.length >= 10
-      ) {
-        setNotice(
-          "Maç desten dolu. Önce bir oyuncuyu çıkar."
-        );
+  async function installApp() {
+    if (installed) {
+      showNotice(
+        "Uygulama zaten kurulu."
+      );
 
-        return previous;
-      }
+      return;
+    }
 
-      return {
-        ...previous,
+    if (!installPrompt) {
+      showNotice(
+        "Yükle seçeneği henüz hazır değil. Sayfada biraz kaldıktan sonra tekrar dene veya tarayıcı menüsündeki Yükle seçeneğini kullan."
+      );
 
-        squad: [
-          ...previous.squad,
-          playerId,
-        ],
-      };
-    });
+      return;
+    }
+
+    await installPrompt.prompt();
+
+    const choice =
+      await installPrompt
+        .userChoice;
+
+    if (
+      choice.outcome ===
+      "accepted"
+    ) {
+      setInstallPrompt(
+        null
+      );
+    }
   }
 
   function collectDailyReward() {
     const today =
-      new Date().toDateString();
+      localDateKey();
 
     if (
-      game.lastDailyReward ===
+      game.daily
+        .lastClaim ===
       today
     ) {
-      setNotice(
+      showNotice(
         "Bugünkü günlük ödülünü zaten aldın."
       );
 
       return;
     }
 
-    setGame((previous) => ({
-      ...previous,
+    const todayNumber =
+      dateKeyToNumber(
+        today
+      );
 
-      coins:
-        previous.coins + 300,
+    const previousNumber =
+      dateKeyToNumber(
+        game.daily
+          .lastClaim
+      );
 
-      lastDailyReward:
-        today,
-    }));
+    const consecutive =
+      previousNumber !==
+        null &&
+      todayNumber -
+        previousNumber ===
+        1;
 
-    setNotice(
-      "Günlük ödül: +300 Coin"
+    const newStreak =
+      consecutive
+        ? (game.daily
+            .streak %
+            7) +
+          1
+        : 1;
+
+    const coinRewards = [
+      300,
+      400,
+      500,
+      650,
+      800,
+      1000,
+      0,
+    ];
+
+    const coinReward =
+      coinRewards[
+        newStreak - 1
+      ];
+
+    let playerReward =
+      null;
+
+    if (
+      newStreak === 7
+    ) {
+      const max =
+        Math.min(
+          99,
+
+          Math.max(
+            22,
+            game.marketCap
+          )
+        );
+
+      const min =
+        Math.max(
+          15,
+          max - 8
+        );
+
+      playerReward =
+        generatePlayer(
+          min,
+          max
+        );
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins +
+          coinReward,
+
+        collection:
+          playerReward
+            ? [
+                ...previous.collection,
+                playerReward,
+              ]
+            : previous.collection,
+
+        daily: {
+          lastClaim:
+            today,
+
+          streak:
+            newStreak,
+        },
+      })
+    );
+
+    showNotice(
+      playerReward
+        ? `7. gün ödülü: ${playerReward.overall} GEN ${playerReward.name}`
+        : `Günlük ödül: +${coinReward} Coin • Seri ${newStreak}/7`
     );
   }
 
   function refreshMarket() {
-    if (game.coins < 100) {
-      setNotice(
+    if (
+      game.coins < 100
+    ) {
+      showNotice(
         "Transfer listesini yenilemek için 100 Coin gerekiyor."
       );
 
       return;
     }
 
-    setGame((previous) => ({
-      ...previous,
+    setGame(
+      (previous) => ({
+        ...previous,
 
-      coins:
-        previous.coins - 100,
+        coins:
+          previous.coins -
+          100,
 
-      market:
-        generateMarketPlayers(
-          6,
-          previous.trainingCap
-        ),
-    }));
+        market:
+          generateMarketPlayers(
+            6,
+            previous.marketCap
+          ),
+      })
+    );
 
-    setNotice(
+    showNotice(
       "Transfer listesi yenilendi."
     );
   }
@@ -593,7 +1081,8 @@ function App() {
     const player =
       game.market.find(
         (item) =>
-          item.id === playerId
+          item.id ===
+          playerId
       );
 
     if (!player) {
@@ -604,38 +1093,42 @@ function App() {
       game.coins <
       player.price
     ) {
-      setNotice(
-        "Yeterli Coin yok."
+      showNotice(
+        "Bu futbolcu için yeterli Coin yok."
       );
 
       return;
     }
 
-    setGame((previous) => ({
-      ...previous,
+    setGame(
+      (previous) => ({
+        ...previous,
 
-      coins:
-        previous.coins -
-        player.price,
+        coins:
+          previous.coins -
+          player.price,
 
-      collection: [
-        ...previous.collection,
+        collection: [
+          ...previous.collection,
 
-        {
-          ...player,
-          price: undefined,
-        },
-      ],
+          {
+            ...player,
 
-      market:
-        previous.market.filter(
-          (item) =>
-            item.id !==
-            playerId
-        ),
-    }));
+            price:
+              undefined,
+          },
+        ],
 
-    setNotice(
+        market:
+          previous.market.filter(
+            (item) =>
+              item.id !==
+              playerId
+          ),
+      })
+    );
+
+    showNotice(
       `${player.name} kulübüne katıldı.`
     );
   }
@@ -645,16 +1138,18 @@ function App() {
       customName.trim();
 
     if (!name) {
-      setNotice(
+      showNotice(
         "Oyuncunun adını yaz."
       );
 
       return;
     }
 
-    if (game.coins < 750) {
-      setNotice(
-        "Oyuncu oluşturmak için 750 Coin gerekiyor."
+    if (
+      game.coins < 750
+    ) {
+      showNotice(
+        "Kendi futbolcunu oluşturmak için 750 Coin gerekiyor."
       );
 
       return;
@@ -666,21 +1161,25 @@ function App() {
         customPosition
       );
 
-    setGame((previous) => ({
-      ...previous,
+    setGame(
+      (previous) => ({
+        ...previous,
 
-      coins:
-        previous.coins - 750,
+        coins:
+          previous.coins -
+          750,
 
-      collection: [
-        ...previous.collection,
-        player,
-      ],
-    }));
+        collection: [
+          ...previous.collection,
+
+          player,
+        ],
+      })
+    );
 
     setCustomName("");
 
-    setNotice(
+    showNotice(
       `${player.name} oluşturuldu. 15 GEN'den başlıyor.`
     );
   }
@@ -689,38 +1188,45 @@ function App() {
     plan
   ) {
     if (!trainingPlayer) {
-      setNotice(
-        "Önce futbolcu seç."
+      showNotice(
+        "Önce antrenman yapacak futbolcuyu seç."
       );
 
       return;
     }
 
     if (game.training) {
-      setNotice(
-        "Şu anda bir antrenman devam ediyor."
+      showNotice(
+        "Şu anda başka bir antrenman devam ediyor."
       );
 
       return;
     }
 
     if (
-      trainingPlayer.overall >=
+      trainingPlayer
+        .overall >=
       game.trainingCap
     ) {
-      setNotice(
-        `${trainingPlayer.name} şu anki gelişim sınırına ulaştı.`
+      showNotice(
+        `${trainingPlayer.name} şu anki ${game.trainingCap} GEN gelişim sınırına ulaştı.`
       );
 
       return;
     }
 
+    const cost =
+      calculateTrainingCost(
+        plan,
+        trainingPlayer
+          .overall
+      );
+
     if (
-      game.coins <
-      plan.cost
+      game.coins < cost
     ) {
-      setNotice(
-        "Yeterli Coin yok."
+      showNotice(
+        "Bu antrenman için yeterli Coin yok."
       );
 
       return;
@@ -736,46 +1242,56 @@ function App() {
         60 *
         1000;
 
-    setGame((previous) => ({
-      ...previous,
+    setGame(
+      (previous) => ({
+        ...previous,
 
-      coins:
-        previous.coins -
-        plan.cost,
+        coins:
+          previous.coins -
+          cost,
 
-      training: {
-        playerId:
-          trainingPlayer.id,
+        training: {
+          playerId:
+            trainingPlayer.id,
 
-        playerName:
-          trainingPlayer.name,
+          playerName:
+            trainingPlayer.name,
 
-        startedAt,
+          startedAt,
 
-        endsAt,
+          endsAt,
 
-        gain:
-          plan.gain,
+          gain:
+            plan.gain,
 
-        planName:
-          plan.title,
-      },
-    }));
+          planName:
+            plan.title,
+        },
+      })
+    );
 
-    setNotice(
-      `${trainingPlayer.name} antrenmana başladı.`
+    showNotice(
+      `${trainingPlayer.name}: ${plan.title} başladı.`
     );
   }
 
-  function streetOpponentStrength(
-    match
+  function eventOpponentStrength(
+    event,
+    eventState
   ) {
     const progress =
-      (match - 1) / 24;
+      event.matches <= 1
+        ? 1
+        : (eventState.match -
+            1) /
+          (event.matches -
+            1);
 
     return Math.round(
-      10 +
-        progress * 20
+      event.min +
+        (event.max -
+          event.min) *
+          progress
     );
   }
 
@@ -794,7 +1310,8 @@ function App() {
     const progress =
       league.matches <= 1
         ? 1
-        : (game.career.match -
+        : (game.career
+              .match -
             1) /
           (league.matches -
             1);
@@ -811,6 +1328,7 @@ function App() {
     mode,
     match,
     target,
+    eventId = null,
     leagueIndex = null,
   }) {
     const opponentDeck =
@@ -844,12 +1362,14 @@ function App() {
     return {
       mode,
 
+      eventId,
+
+      leagueIndex,
+
       phase:
         "playing",
 
       match,
-
-      leagueIndex,
 
       round: 0,
 
@@ -897,21 +1417,53 @@ function App() {
     };
   }
 
-  function startStreetBattle() {
+  function startEventBattle(
+    eventId
+  ) {
+    const eventIndex =
+      eventConfigs.findIndex(
+        (event) =>
+          event.id ===
+          eventId
+      );
+
+    const event =
+      eventConfigs[
+        eventIndex
+      ];
+
+    const eventState =
+      game.events[
+        eventId
+      ];
+
     if (
-      game.street.completed
+      !isEventUnlocked(
+        eventIndex
+      )
     ) {
-      setNotice(
-        "Sokak Futbolu tamamlandı."
+      showNotice(
+        "Bu etkinlik henüz kilitli."
       );
 
       return;
     }
 
     if (
-      squadPlayers.length !== 10
+      eventState.completed
     ) {
-      setNotice(
+      showNotice(
+        `${event.name} tamamlandı.`
+      );
+
+      return;
+    }
+
+    if (
+      squadPlayers.length !==
+      10
+    ) {
+      showNotice(
         "Maça girmek için destende tam 10 kart olmalı."
       );
 
@@ -920,14 +1472,17 @@ function App() {
 
     setBattle(
       buildBattle({
-        mode: "street",
+        mode: "event",
+
+        eventId,
 
         match:
-          game.street.match,
+          eventState.match,
 
         target:
-          streetOpponentStrength(
-            game.street.match
+          eventOpponentStrength(
+            event,
+            eventState
           ),
       })
     );
@@ -937,9 +1492,10 @@ function App() {
 
   function startCareerBattle() {
     if (
-      game.career.completed
+      game.career
+        .completed
     ) {
-      setNotice(
+      showNotice(
         "Kariyer liglerinin tamamını bitirdin."
       );
 
@@ -947,9 +1503,10 @@ function App() {
     }
 
     if (
-      squadPlayers.length !== 10
+      squadPlayers.length !==
+      10
     ) {
-      setNotice(
+      showNotice(
         "Kariyer maçına girmek için destende tam 10 kart olmalı."
       );
 
@@ -961,7 +1518,8 @@ function App() {
         mode: "career",
 
         match:
-          game.career.match,
+          game.career
+            .match,
 
         target:
           careerOpponentStrength(),
@@ -978,18 +1536,12 @@ function App() {
   function playBattleCard(
     player
   ) {
-    if (!battle) {
-      return;
-    }
-
     if (
+      !battle ||
       battle.phase !==
-      "playing"
+        "playing" ||
+      battle.reveal
     ) {
-      return;
-    }
-
-    if (battle.reveal) {
       return;
     }
 
@@ -1022,42 +1574,29 @@ function App() {
       result = "loss";
     }
 
-    setBattle((previous) => ({
-      ...previous,
+    setBattle(
+      (previous) => ({
+        ...previous,
 
-      playerScore:
-        previous.playerScore +
-        (result === "win"
-          ? 1
-          : 0),
+        playerScore:
+          previous.playerScore +
+          (result === "win"
+            ? 1
+            : 0),
 
-      opponentScore:
-        previous.opponentScore +
-        (result === "loss"
-          ? 1
-          : 0),
+        opponentScore:
+          previous.opponentScore +
+          (result === "loss"
+            ? 1
+            : 0),
 
-      usedPlayerIds: [
-        ...previous.usedPlayerIds,
-        player.id,
-      ],
+        usedPlayerIds: [
+          ...previous.usedPlayerIds,
 
-      reveal: {
-        player,
+          player.id,
+        ],
 
-        opponent:
-          opponentCard,
-
-        result,
-      },
-
-      history: [
-        ...previous.history,
-
-        {
-          round:
-            previous.round + 1,
-
+        reveal: {
           player,
 
           opponent:
@@ -1065,8 +1604,25 @@ function App() {
 
           result,
         },
-      ],
-    }));
+
+        history: [
+          ...previous.history,
+
+          {
+            round:
+              previous.round +
+              1,
+
+            player,
+
+            opponent:
+              opponentCard,
+
+            result,
+          },
+        ],
+      })
+    );
   }
 
   function nextBattleRound() {
@@ -1077,13 +1633,16 @@ function App() {
       return;
     }
 
-    if (battle.round < 4) {
+    if (
+      battle.round < 4
+    ) {
       setBattle(
         (previous) => ({
           ...previous,
 
           round:
-            previous.round + 1,
+            previous.round +
+            1,
 
           reveal: null,
         })
@@ -1137,7 +1696,8 @@ function App() {
     if (
       !battle ||
       battle.phase !==
-        "sudden"
+        "sudden" ||
+      battle.reveal
     ) {
       return;
     }
@@ -1168,17 +1728,13 @@ function App() {
           battle.opponentDeck
         );
 
-      if (
+      won =
         playerAverage ===
         opponentAverage
-      ) {
-        won =
-          Math.random() >= 0.5;
-      } else {
-        won =
-          playerAverage >
-          opponentAverage;
-      }
+          ? Math.random() >=
+            0.5
+          : playerAverage >
+            opponentAverage;
     }
 
     setBattle(
@@ -1198,6 +1754,7 @@ function App() {
 
         result: {
           sudden: true,
+
           won,
         },
       })
@@ -1205,12 +1762,15 @@ function App() {
   }
 
   function finishSuddenDeath() {
-    if (!battle?.result) {
+    if (
+      !battle?.result
+    ) {
       return;
     }
 
     finishBattle(
       battle.result.won,
+
       true
     );
   }
@@ -1224,19 +1784,20 @@ function App() {
           .leagueIndex
       ];
 
-    const isLastMatch =
-      previous.career.match >=
+    const lastMatch =
+      previous.career
+        .match >=
       league.matches;
 
-    const isLastLeague =
+    const lastLeague =
       previous.career
         .leagueIndex >=
       careerLeagues.length -
         1;
 
     if (
-      isLastMatch &&
-      isLastLeague
+      lastMatch &&
+      lastLeague
     ) {
       return {
         ...previous.career,
@@ -1249,13 +1810,14 @@ function App() {
       };
     }
 
-    if (isLastMatch) {
+    if (lastMatch) {
       return {
         ...previous.career,
 
         leagueIndex:
           previous.career
-            .leagueIndex + 1,
+            .leagueIndex +
+          1,
 
         match: 1,
 
@@ -1288,8 +1850,20 @@ function App() {
 
     if (
       battle.mode ===
-      "street"
+      "event"
     ) {
+      const eventIndex =
+        eventConfigs.findIndex(
+          (event) =>
+            event.id ===
+            battle.eventId
+        );
+
+      const event =
+        eventConfigs[
+          eventIndex
+        ];
+
       const match =
         battle.match;
 
@@ -1306,7 +1880,8 @@ function App() {
 
               sudden,
 
-              streetCoins: 0,
+              currencyReward:
+                0,
 
               rewardPlayer:
                 null,
@@ -1317,74 +1892,112 @@ function App() {
         return;
       }
 
-      const streetCoins =
-        70 +
-        match * 18;
+      const currencyReward =
+        event.rewardBase +
+        match *
+          event.rewardStep;
 
-      let rewardPlayer =
-        null;
-
-      if (
+      const rewardPlayer =
         match % 5 === 0
-      ) {
-        const rewardOverall =
-          Math.min(
-            30,
+          ? generatePlayer(
+              Math.min(
+                event.max,
 
-            12 +
-              Math.floor(
-                match / 5
-              ) *
-                4
-          );
+                Math.max(
+                  event.min,
 
-        rewardPlayer =
-          generatePlayer(
-            rewardOverall,
-            rewardOverall
-          );
-      }
+                  event.min +
+                    Math.floor(
+                      (match /
+                        event.matches) *
+                        (event.max -
+                          event.min)
+                    ) -
+                    1
+                )
+              ),
+
+              Math.min(
+                event.max,
+
+                Math.max(
+                  event.min,
+
+                  event.min +
+                    Math.floor(
+                      (match /
+                        event.matches) *
+                        (event.max -
+                          event.min)
+                    ) +
+                    1
+                )
+              )
+            )
+          : null;
 
       const finalMatch =
-        match === 25;
+        match >=
+        event.matches;
 
       setGame(
-        (previous) => ({
-          ...previous,
+        (previous) => {
+          const current =
+            previous.events[
+              event.id
+            ];
 
-          collection:
-            rewardPlayer
-              ? [
-                  ...previous.collection,
-                  rewardPlayer,
-                ]
-              : previous.collection,
+          return {
+            ...previous,
 
-          trainingCap:
-            finalMatch
-              ? Math.max(
-                  40,
-                  previous.trainingCap
-                )
-              : previous.trainingCap,
+            collection:
+              rewardPlayer
+                ? [
+                    ...previous.collection,
 
-          street: {
-            ...previous.street,
+                    rewardPlayer,
+                  ]
+                : previous.collection,
 
-            streetCoins:
-              previous.street
-                .streetCoins +
-              streetCoins,
-
-            match:
+            trainingCap:
               finalMatch
-                ? 25
-                : match + 1,
+                ? Math.max(
+                    previous.trainingCap,
 
-            completed:
-              finalMatch,
-          },
-        })
+                    event.unlockCap
+                  )
+                : previous.trainingCap,
+
+            marketCap:
+              finalMatch
+                ? Math.max(
+                    previous.marketCap,
+
+                    event.unlockCap
+                  )
+                : previous.marketCap,
+
+            events: {
+              ...previous.events,
+
+              [event.id]: {
+                ...current,
+
+                currency:
+                  current.currency +
+                  currencyReward,
+
+                match:
+                  finalMatch
+                    ? event.matches
+                    : match + 1,
+
+                completed:
+                  finalMatch,
+              },
+            },
+          };
+        }
       );
 
       setBattle(
@@ -1399,9 +2012,12 @@ function App() {
 
             sudden,
 
-            streetCoins,
+            currencyReward,
 
             rewardPlayer,
+
+            eventCompleted:
+              finalMatch,
           },
         })
       );
@@ -1441,9 +2057,20 @@ function App() {
         ),
       };
 
+      const coinReward =
+        120 +
+        battle.leagueIndex *
+          100 +
+        battle.match *
+          15;
+
       setGame(
         (previous) => ({
           ...previous,
+
+          coins:
+            previous.coins +
+            coinReward,
 
           trophies:
             previous.trophies +
@@ -1451,6 +2078,7 @@ function App() {
 
           collection: [
             ...previous.collection,
+
             rewardPlayer,
           ],
 
@@ -1474,6 +2102,8 @@ function App() {
             sudden,
 
             rewardPlayer,
+
+            coinReward,
           },
         })
       );
@@ -1483,11 +2113,8 @@ function App() {
   function giveCareerCard(
     player
   ) {
-    if (!battle) {
-      return;
-    }
-
     if (
+      !battle ||
       battle.mode !==
         "career" ||
       battle.phase !==
@@ -1533,8 +2160,6 @@ function App() {
         result: {
           ...previous.result,
 
-          won: false,
-
           lostPlayer:
             player,
         },
@@ -1546,11 +2171,22 @@ function App() {
     setBattle(null);
   }
 
-  function buyStreetPlayer(
+  function buyEventPlayer(
+    eventId,
     playerId
   ) {
+    const event =
+      getEventConfig(
+        eventId
+      );
+
+    const eventState =
+      game.events[
+        eventId
+      ];
+
     const player =
-      game.streetShop.find(
+      eventState.shop.find(
         (item) =>
           item.id ===
           playerId
@@ -1561,11 +2197,11 @@ function App() {
     }
 
     if (
-      game.street.streetCoins <
+      eventState.currency <
       player.eventPrice
     ) {
-      setNotice(
-        "Yeterli Street Coin yok."
+      showNotice(
+        `Yeterli ${event.currencyName} yok.`
       );
 
       return;
@@ -1586,26 +2222,35 @@ function App() {
           },
         ],
 
-        street: {
-          ...previous.street,
+        events: {
+          ...previous.events,
 
-          streetCoins:
-            previous.street
-              .streetCoins -
-            player.eventPrice,
+          [eventId]: {
+            ...previous.events[
+              eventId
+            ],
+
+            currency:
+              previous.events[
+                eventId
+              ].currency -
+              player.eventPrice,
+
+            shop:
+              previous.events[
+                eventId
+              ].shop.filter(
+                (item) =>
+                  item.id !==
+                  playerId
+              ),
+          },
         },
-
-        streetShop:
-          previous.streetShop.filter(
-            (item) =>
-              item.id !==
-              playerId
-          ),
       })
     );
 
-    setNotice(
-      `${player.name} transfer edildi.`
+    showNotice(
+      `${player.name}, ${event.name} mağazasından alındı.`
     );
   }
 
@@ -1614,14 +2259,19 @@ function App() {
       <header className="top-bar">
         <button
           type="button"
-          className="club-info club-button"
+          className="club-button"
           onClick={goHome}
         >
-          <div className="mini-logo">
-            SCW
-          </div>
+          <img
+            className="mini-logo-image"
+            src={`${
+              import.meta.env
+                .BASE_URL
+            }icons/icon.svg`}
+            alt="SCW"
+          />
 
-          <div>
+          <div className="club-text">
             <div className="club-name">
               {game.clubName}
             </div>
@@ -1650,14 +2300,17 @@ function App() {
           <div className="currency">
             🏆{" "}
             <b>
-              {game.trophies}
+              {
+                game.trophies
+              }
             </b>
           </div>
 
           <button
             type="button"
-            className="secondary-button reset-button"
+            className="icon-button danger-button"
             onClick={resetGame}
+            title="Oyunu sıfırla"
           >
             ↻
           </button>
@@ -1684,23 +2337,105 @@ function App() {
     );
   }
 
-  function CardBack({
-    label = "GİZLİ KART",
-  }) {
+  function CardBack() {
     return (
       <div className="card-back">
-        <div className="card-back-border">
-          <div className="card-back-logo">
-            SCW
-          </div>
-
-          <div className="card-back-ball">
-            ⚽
-          </div>
+        <div className="card-back-inner">
+          <img
+            src={`${
+              import.meta.env
+                .BASE_URL
+            }icons/icon.svg`}
+            alt=""
+            className="card-back-logo"
+          />
 
           <div className="card-back-label">
-            {label}
+            GİZLİ KART
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  function BattleScore({
+    battle:
+      currentBattle,
+  }) {
+    return (
+      <div className="battle-score">
+        <div>
+          <span>SEN</span>
+
+          <strong>
+            {
+              currentBattle.playerScore
+            }
+          </strong>
+        </div>
+
+        <b>:</b>
+
+        <div>
+          <span>RAKİP</span>
+
+          <strong>
+            {
+              currentBattle.opponentScore
+            }
+          </strong>
+        </div>
+      </div>
+    );
+  }
+
+  function RevealArena({
+    reveal,
+  }) {
+    return (
+      <div className="reveal-arena">
+        <div>
+          <span className="reveal-label">
+            SEN
+          </span>
+
+          <PlayerCard
+            player={
+              reveal.player
+            }
+            compact
+          />
+        </div>
+
+        <div className="versus-result">
+          <strong>
+            {
+              reveal.player
+                .overall
+            }
+          </strong>
+
+          <span>VS</span>
+
+          <strong>
+            {
+              reveal.opponent
+                .overall
+            }
+          </strong>
+        </div>
+
+        <div>
+          <span className="reveal-label">
+            RAKİP
+          </span>
+
+          <PlayerCard
+            player={
+              reveal.opponent
+            }
+            compact
+          />
         </div>
       </div>
     );
@@ -1723,6 +2458,13 @@ function App() {
       battle.mode ===
       "career";
 
+    const event =
+      battle.eventId
+        ? getEventConfig(
+            battle.eventId
+          )
+        : null;
+
     const league =
       isCareer
         ? careerLeagues[
@@ -1733,14 +2475,14 @@ function App() {
     const battleTitle =
       isCareer
         ? `${league.name} • MAÇ ${battle.match}`
-        : `SOKAK FUTBOLU • MAÇ ${battle.match}`;
+        : `${event.icon} ${event.name} • MAÇ ${battle.match}`;
 
     if (
       battle.phase ===
       "loss-select"
     ) {
       return (
-        <div className="battle-screen career-loss-screen">
+        <section className="battle-screen loss-screen">
           <div className="section-label">
             KARİYER CEZASI
           </div>
@@ -1750,18 +2492,20 @@ function App() {
           </h1>
 
           <p>
-            Maçı kaybettin. Bu
-            maça getirdiğin 10
-            karttan bir futbolcuyu
+            Maçı kaybettin.
+            Bu maça getirdiğin
+            10 karttan birini
             rakip kulübe vermek
             zorundasın.
           </p>
 
-          <div className="career-loss-grid">
+          <div className="loss-grid">
             {battle.playerDeck.map(
               (player) => (
                 <PlayerCard
-                  key={player.id}
+                  key={
+                    player.id
+                  }
                   player={player}
                   compact
                   onClick={() =>
@@ -1773,7 +2517,7 @@ function App() {
               )
             )}
           </div>
-        </div>
+        </section>
       );
     }
 
@@ -1782,92 +2526,71 @@ function App() {
       "finished"
     ) {
       return (
-        <div className="battle-screen">
-          <div className="battle-finished">
-            <div className="section-label">
-              MAÇ SONU
+        <section className="battle-screen battle-finished">
+          <div className="section-label">
+            MAÇ SONU
+          </div>
+
+          <h1
+            className={
+              battle.result
+                .won
+                ? "victory-text"
+                : "defeat-text"
+            }
+          >
+            {battle.result
+              .won
+              ? "GALİBİYET"
+              : "MAĞLUBİYET"}
+          </h1>
+
+          <div className="final-score">
+            {
+              battle.playerScore
+            }
+
+            <span>-</span>
+
+            {
+              battle.opponentScore
+            }
+          </div>
+
+          {battle.result
+            .sudden && (
+            <div className="result-note">
+              SUDDEN DEATH
             </div>
+          )}
 
-            <h1
-              className={
-                battle.result.won
-                  ? "victory-text"
-                  : "defeat-text"
-              }
-            >
-              {battle.result.won
-                ? "GALİBİYET"
-                : "MAĞLUBİYET"}
-            </h1>
+          {battle.mode ===
+            "event" &&
+            battle.result
+              .won && (
+              <>
+                <div className="reward-banner">
+                  {
+                    event.currencyIcon
+                  }{" "}
+                  +
+                  {
+                    battle.result
+                      .currencyReward
+                  }{" "}
+                  {
+                    event.currencyName
+                  }
+                </div>
 
-            <div className="final-score">
-              {battle.playerScore}
-
-              <span>
-                -
-              </span>
-
-              {battle.opponentScore}
-            </div>
-
-            {battle.result.sudden && (
-              <div className="career-sudden-note">
-                SUDDEN DEATH
-              </div>
-            )}
-
-            {battle.mode ===
-              "street" &&
-              battle.result.won && (
-                <>
-                  <div className="battle-reward">
-                    🟠 +
-                    {
-                      battle.result
-                        .streetCoins
-                    }{" "}
-                    STREET COIN
-                  </div>
-
-                  {battle.result
-                    .rewardPlayer && (
-                    <div className="reward-player">
-                      <div className="section-label">
-                        FUTBOLCU ÖDÜLÜ
-                      </div>
-
-                      <PlayerCard
-                        player={
-                          battle.result
-                            .rewardPlayer
-                        }
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-
-            {battle.mode ===
-              "street" &&
-              !battle.result.won && (
-                <p className="battle-loss-note">
-                  Etkinlik maçında
-                  kart kaybetmezsin.
-                  Aynı maçı tekrar
-                  deneyebilirsin.
-                </p>
-              )}
-
-            {battle.mode ===
-              "career" &&
-              battle.result.won && (
-                <>
-                  <div className="career-transfer-title">
-                    RAKİPTEN KART
-                    KAZANDIN
-                  </div>
-
+                {battle.result
+                  .rewardPlayer && (
                   <div className="reward-player">
+                    <div className="section-label">
+                      FUTBOLCU
+                      ÖDÜLÜ
+                    </div>
+
                     <PlayerCard
                       player={
                         battle.result
@@ -1875,40 +2598,94 @@ function App() {
                       }
                     />
                   </div>
-                </>
-              )}
+                )}
 
-            {battle.mode ===
-              "career" &&
-              !battle.result.won &&
-              battle.result
-                .lostPlayer && (
-                <>
-                  <div className="career-lost-title">
-                    RAKİBE GİDEN
-                    OYUNCU
+                {battle.result
+                  .eventCompleted && (
+                  <div className="unlock-banner">
+                    ETKİNLİK
+                    TAMAMLANDI •
+                    GELİŞİM SINIRI{" "}
+                    {
+                      event.unlockCap
+                    }{" "}
+                    GEN
+                  </div>
+                )}
+              </>
+            )}
+
+          {battle.mode ===
+            "event" &&
+            !battle.result
+              .won && (
+              <p className="result-copy">
+                Etkinlikte kart
+                kaybetmezsin.
+                Aynı maçı tekrar
+                deneyebilirsin.
+              </p>
+            )}
+
+          {battle.mode ===
+            "career" &&
+            battle.result
+              .won && (
+              <>
+                <div className="reward-banner">
+                  🪙 +
+                  {
+                    battle.result
+                      .coinReward
+                  }{" "}
+                  COIN
+                </div>
+
+                <div className="reward-player">
+                  <div className="section-label">
+                    RAKİPTEN
+                    KAZANDIĞIN KART
                   </div>
 
-                  <div className="reward-player">
-                    <PlayerCard
-                      player={
-                        battle.result
-                          .lostPlayer
-                      }
-                    />
-                  </div>
-                </>
-              )}
+                  <PlayerCard
+                    player={
+                      battle.result
+                        .rewardPlayer
+                    }
+                  />
+                </div>
+              </>
+            )}
 
-            <button
-              type="button"
-              className="event-play-button"
-              onClick={closeBattle}
-            >
-              DEVAM ET
-            </button>
-          </div>
-        </div>
+          {battle.mode ===
+            "career" &&
+            !battle.result
+              .won &&
+            battle.result
+              .lostPlayer && (
+              <div className="reward-player lost-player">
+                <div className="section-label">
+                  RAKİBE GİDEN
+                  KART
+                </div>
+
+                <PlayerCard
+                  player={
+                    battle.result
+                      .lostPlayer
+                  }
+                />
+              </div>
+            )}
+
+          <button
+            type="button"
+            className="primary-wide-button"
+            onClick={closeBattle}
+          >
+            DEVAM ET
+          </button>
+        </section>
       );
     }
 
@@ -1917,8 +2694,8 @@ function App() {
       "sudden"
     ) {
       return (
-        <div className="battle-screen">
-          <div className="battle-top">
+        <section className="battle-screen">
+          <div className="battle-heading-row">
             <div>
               <div className="section-label">
                 {battleTitle}
@@ -1929,29 +2706,9 @@ function App() {
               </h1>
             </div>
 
-            <div className="battle-score">
-              <div>
-                <span>
-                  SEN
-                </span>
-
-                <strong>
-                  {battle.playerScore}
-                </strong>
-              </div>
-
-              <b>:</b>
-
-              <div>
-                <span>
-                  RAKİP
-                </span>
-
-                <strong>
-                  {battle.opponentScore}
-                </strong>
-              </div>
-            </div>
+            <BattleScore
+              battle={battle}
+            />
           </div>
 
           {!battle.reveal ? (
@@ -1961,16 +2718,21 @@ function App() {
               </div>
 
               <div className="battle-message">
-                İki yedek kartından
-                birini seç.
+                İki yedek
+                kartından birini
+                seç.
               </div>
 
-              <div className="battle-hand sudden-hand">
+              <div className="sudden-grid">
                 {battle.suddenChoices.map(
                   (player) => (
                     <PlayerCard
-                      key={player.id}
-                      player={player}
+                      key={
+                        player.id
+                      }
+                      player={
+                        player
+                      }
                       compact
                       onClick={() =>
                         playSuddenCard(
@@ -1984,86 +2746,44 @@ function App() {
             </>
           ) : (
             <>
-              <div className="reveal-arena">
-                <div>
-                  <span className="reveal-side">
-                    SEN
-                  </span>
-
-                  <PlayerCard
-                    player={
-                      battle.reveal
-                        .player
-                    }
-                  />
-                </div>
-
-                <div className="versus-result">
-                  <strong>
-                    {
-                      battle.reveal
-                        .player
-                        .overall
-                    }
-                  </strong>
-
-                  <span>
-                    VS
-                  </span>
-
-                  <strong>
-                    {
-                      battle.reveal
-                        .opponent
-                        .overall
-                    }
-                  </strong>
-                </div>
-
-                <div>
-                  <span className="reveal-side">
-                    RAKİP
-                  </span>
-
-                  <PlayerCard
-                    player={
-                      battle.reveal
-                        .opponent
-                    }
-                  />
-                </div>
-              </div>
+              <RevealArena
+                reveal={
+                  battle.reveal
+                }
+              />
 
               <div
-                className={
-                  battle.result.won
-                    ? "round-result round-win"
-                    : "round-result round-loss"
-                }
+                className={`round-result ${
+                  battle.result
+                    .won
+                    ? "round-win"
+                    : "round-loss"
+                }`}
               >
-                {battle.result.won
-                  ? "MAÇ SENİN!"
+                {battle.result
+                  .won
+                  ? "MAÇ SENİN"
                   : "RAKİP KAZANDI"}
               </div>
 
               <button
                 type="button"
-                className="event-play-button"
+                className="primary-wide-button"
                 onClick={
                   finishSuddenDeath
                 }
               >
-                SONUCU GÖR
+                MAÇ SONUCUNU GÖR
               </button>
             </>
           )}
-        </div>
+        </section>
       );
     }
 
     return (
-      <div className="battle-screen">
-        <div className="battle-top">
+      <section className="battle-screen">
+        <div className="battle-heading-row">
           <div>
             <div className="section-label">
               {battleTitle}
@@ -2071,33 +2791,15 @@ function App() {
 
             <h1>
               RAUND{" "}
-              {battle.round + 1}/5
+              {battle.round +
+                1}
+              /5
             </h1>
           </div>
 
-          <div className="battle-score">
-            <div>
-              <span>
-                SEN
-              </span>
-
-              <strong>
-                {battle.playerScore}
-              </strong>
-            </div>
-
-            <b>:</b>
-
-            <div>
-              <span>
-                RAKİP
-              </span>
-
-              <strong>
-                {battle.opponentScore}
-              </strong>
-            </div>
-          </div>
+          <BattleScore
+            battle={battle}
+          />
         </div>
 
         <div className="opponent-zone">
@@ -2113,6 +2815,7 @@ function App() {
                 battle.reveal
                   .opponent
               }
+              compact
             />
           )}
         </div>
@@ -2120,10 +2823,12 @@ function App() {
         {!battle.reveal ? (
           <>
             <div className="battle-message">
-              Rakip kartını attı.
+              Rakip kartını
+              attı.{" "}
+
               <strong>
-                {" "}
-                Kartını seç.
+                Şimdi kartını
+                seç.
               </strong>
             </div>
 
@@ -2131,8 +2836,12 @@ function App() {
               {remainingCards.map(
                 (player) => (
                   <PlayerCard
-                    key={player.id}
-                    player={player}
+                    key={
+                      player.id
+                    }
+                    player={
+                      player
+                    }
                     compact
                     onClick={() =>
                       playBattleCard(
@@ -2146,55 +2855,11 @@ function App() {
           </>
         ) : (
           <>
-            <div className="reveal-arena">
-              <div>
-                <span className="reveal-side">
-                  SEN
-                </span>
-
-                <PlayerCard
-                  player={
-                    battle.reveal
-                      .player
-                  }
-                />
-              </div>
-
-              <div className="versus-result">
-                <strong>
-                  {
-                    battle.reveal
-                      .player
-                      .overall
-                  }
-                </strong>
-
-                <span>
-                  VS
-                </span>
-
-                <strong>
-                  {
-                    battle.reveal
-                      .opponent
-                      .overall
-                  }
-                </strong>
-              </div>
-
-              <div>
-                <span className="reveal-side">
-                  RAKİP
-                </span>
-
-                <PlayerCard
-                  player={
-                    battle.reveal
-                      .opponent
-                  }
-                />
-              </div>
-            </div>
+            <RevealArena
+              reveal={
+                battle.reveal
+              }
+            />
 
             <div
               className={`round-result ${
@@ -2216,76 +2881,61 @@ function App() {
                 : battle.reveal
                       .result ===
                     "loss"
-                  ? "RAKİP ALDI"
+                  ? "RAKİP RAUNDU ALDI"
                   : "BERABERE"}
             </div>
 
             <button
               type="button"
-              className="event-play-button"
+              className="primary-wide-button"
               onClick={
                 nextBattleRound
               }
             >
-              {battle.round === 4
+              {battle.round ===
+              4
                 ? "MAÇI TAMAMLA"
                 : "SONRAKİ RAUND"}
             </button>
           </>
         )}
 
-        {battle.history.length >
-          0 && (
+        {battle.history
+          .length > 0 && (
           <div className="round-history">
             {battle.history.map(
               (round) => (
                 <div
+                  className="history-pill"
                   key={
                     round.round
                   }
-                  className="history-item"
                 >
-                  <span>
-                    R{round.round}
-                  </span>
-
-                  <strong>
-                    {
-                      round.player
-                        .overall
-                    }
-                    -
-                    {
-                      round.opponent
-                        .overall
-                    }
-                  </strong>
-
-                  <b
-                    className={
-                      round.result ===
-                      "win"
-                        ? "history-win"
-                        : round.result ===
-                            "loss"
-                          ? "history-loss"
-                          : "history-draw"
-                    }
-                  >
-                    {round.result ===
-                    "win"
-                      ? "W"
-                      : round.result ===
-                          "loss"
-                        ? "L"
-                        : "D"}
-                  </b>
+                  R{round.round}
+                  {" • "}
+                  {
+                    round.player
+                      .overall
+                  }
+                  -
+                  {
+                    round.opponent
+                      .overall
+                  }
+                  {" • "}
+                  {round.result ===
+                  "win"
+                    ? "W"
+                    : round.result ===
+                        "loss"
+                      ? "L"
+                      : "D"}
                 </div>
               )
             )}
           </div>
         )}
-      </div>
+      </section>
     );
   }
 
@@ -2293,6 +2943,15 @@ function App() {
     return (
       <div className="intro-screen">
         <div className="intro-content">
+          <img
+            src={`${
+              import.meta.env
+                .BASE_URL
+            }icons/icon.svg`}
+            alt="Soccer Cards War"
+            className="intro-logo"
+          />
+
           <div className="publisher">
             EL TURCO
           </div>
@@ -2303,6 +2962,7 @@ function App() {
 
           <h1 className="game-logo-title">
             SOCCER{" "}
+
             <span>
               CARDS WAR
             </span>
@@ -2313,8 +2973,9 @@ function App() {
           <p className="intro-text">
             Kartlarını topla.
             Kulübünü kur.
-            Oyuncularını geliştir.
-            Zirveye çık.
+            Kendi yıldızını
+            geliştir. Kart
+            savaşlarını kazan.
           </p>
 
           <button
@@ -2328,7 +2989,8 @@ function App() {
           </button>
 
           <div className="version">
-            EL TURCO • EARLY ACCESS
+            EL TURCO • v1.0
+            BUILD
           </div>
         </div>
       </div>
@@ -2342,7 +3004,7 @@ function App() {
 
         <div className="setup-box">
           <div className="section-label">
-            YENİ KARİYER
+            YENİ KULÜP
           </div>
 
           <h1>
@@ -2350,7 +3012,11 @@ function App() {
           </h1>
 
           <p>
-            Takımının adını sen belirle.
+            Takımının adını
+            sen belirle.
+            Başlangıçta 10 adet
+            10–22 GEN futbolcu
+            alırsın.
           </p>
 
           <input
@@ -2359,7 +3025,8 @@ function App() {
             }
             onChange={(event) =>
               setClubNameInput(
-                event.target.value
+                event.target
+                  .value
               )
             }
             maxLength={24}
@@ -2368,15 +3035,13 @@ function App() {
 
           <button
             type="button"
-            className="primary-button setup-create"
-            onClick={createClub}
+            className="primary-wide-button"
+            onClick={
+              createClub
+            }
           >
             KULÜBÜ OLUŞTUR
           </button>
-
-          <small>
-            Başlangıçta 10 futbolcu verilir.
-          </small>
         </div>
       </div>
     );
@@ -2389,41 +3054,23 @@ function App() {
         <Notice />
 
         <main className="page-content">
-          <button
-            className="back-link"
+          <BackButton
             onClick={goHome}
-          >
-            ← ANA MENÜ
-          </button>
+          />
 
-          <div className="page-heading">
-            <div>
-              <div className="section-label">
-                10 KARTLIK DESTE
-              </div>
-
-              <h1>
-                TAKIMIM
-              </h1>
-
-              <p>
-                Maçta 10 kartından rastgele 5'i eline gelir.
-              </p>
-            </div>
-
-            <div className="overall-box">
-              <strong>
-                {teamOverall}
-              </strong>
-
-              <span>
-                DESTE GEN
-              </span>
-            </div>
-          </div>
+          <PageHeading
+            label="10 KARTLIK DESTE"
+            title="TAKIMIM"
+            text="Maçta bu 10 karttan rastgele 5 tanesi eline gelir."
+            stat={`${teamOverall} GEN`}
+          />
 
           <div className="squad-counter">
-            {game.squad.length}/10
+            {
+              game.squad
+                .length
+            }
+            /10
           </div>
 
           <div className="collection-grid">
@@ -2434,22 +3081,28 @@ function App() {
                   b.overall -
                   a.overall
               )
-              .map((player) => (
-                <PlayerCard
-                  key={player.id}
-                  player={player}
-                  selected={
-                    game.squad.includes(
+              .map(
+                (player) => (
+                  <PlayerCard
+                    key={
                       player.id
-                    )
-                  }
-                  onClick={() =>
-                    toggleSquadPlayer(
-                      player.id
-                    )
-                  }
-                />
-              ))}
+                    }
+                    player={
+                      player
+                    }
+                    selected={
+                      game.squad.includes(
+                        player.id
+                      )
+                    }
+                    onClick={() =>
+                      toggleSquadPlayer(
+                        player.id
+                      )
+                    }
+                  />
+                )
+              )}
           </div>
         </main>
       </div>
@@ -2466,29 +3119,16 @@ function App() {
         <Notice />
 
         <main className="page-content">
-          <button
-            className="back-link"
+          <BackButton
             onClick={goHome}
-          >
-            ← ANA MENÜ
-          </button>
+          />
 
-          <div className="page-heading">
-            <div>
-              <div className="section-label">
-                FUTBOLCULARIM
-              </div>
-
-              <h1>
-                KOLEKSİYON
-              </h1>
-
-              <p>
-                Toplam{" "}
-                {game.collection.length} kart.
-              </p>
-            </div>
-          </div>
+          <PageHeading
+            label="FUTBOLCULARIM"
+            title="KOLEKSİYON"
+            text={`Toplam ${game.collection.length} kartın var.`}
+            stat={`${game.collection.length} KART`}
+          />
 
           <div className="collection-grid">
             {game.collection
@@ -2498,17 +3138,23 @@ function App() {
                   b.overall -
                   a.overall
               )
-              .map((player) => (
-                <PlayerCard
-                  key={player.id}
-                  player={player}
-                  selected={
-                    game.squad.includes(
+              .map(
+                (player) => (
+                  <PlayerCard
+                    key={
                       player.id
-                    )
-                  }
-                />
-              ))}
+                    }
+                    player={
+                      player
+                    }
+                    selected={
+                      game.squad.includes(
+                        player.id
+                      )
+                    }
+                  />
+                )
+              )}
           </div>
         </main>
       </div>
@@ -2520,7 +3166,8 @@ function App() {
   ) {
     const remaining =
       game.training
-        ? game.training.endsAt -
+        ? game.training
+            .endsAt -
           now
         : 0;
 
@@ -2530,52 +3177,37 @@ function App() {
         <Notice />
 
         <main className="page-content">
-          <button
-            className="back-link"
+          <BackButton
             onClick={goHome}
-          >
-            ← ANA MENÜ
-          </button>
+          />
 
-          <div className="page-heading">
-            <div>
-              <div className="section-label">
-                GELİŞİM MERKEZİ
-              </div>
-
-              <h1>
-                ANTRENMAN
-              </h1>
-
-              <p>
-                Futbolcularını gerçek zamanlı geliştir.
-              </p>
-            </div>
-
-            <div className="overall-box">
-              <strong>
-                {game.trainingCap}
-              </strong>
-
-              <span>
-                GELİŞİM SINIRI
-              </span>
-            </div>
-          </div>
+          <PageHeading
+            label="GELİŞİM MERKEZİ"
+            title="ANTRENMAN"
+            text="Coin harca, gerçek zamanlı çalıştır ve futbolcularını geliştir."
+            stat={`${game.trainingCap} MAX`}
+          />
 
           {game.training && (
             <div className="training-running">
               <div>
                 <span>
-                  ANTRENMAN DEVAM EDİYOR
+                  ANTRENMAN DEVAM
+                  EDİYOR
                 </span>
 
                 <h2>
-                  {game.training.playerName}
+                  {
+                    game.training
+                      .playerName
+                  }
                 </h2>
 
                 <p>
-                  {game.training.planName}
+                  {
+                    game.training
+                      .planName
+                  }
                 </p>
               </div>
 
@@ -2588,7 +3220,7 @@ function App() {
           )}
 
           <h2 className="screen-subtitle">
-            FUTBOLCUYU SEÇ
+            1. FUTBOLCUYU SEÇ
           </h2>
 
           <div className="collection-grid">
@@ -2599,57 +3231,85 @@ function App() {
                   b.overall -
                   a.overall
               )
-              .map((player) => (
-                <PlayerCard
-                  key={player.id}
-                  player={player}
-                  selected={
-                    trainingPlayerId ===
-                    player.id
-                  }
-                  onClick={() =>
-                    setTrainingPlayerId(
+              .map(
+                (player) => (
+                  <PlayerCard
+                    key={
                       player.id
-                    )
-                  }
-                />
-              ))}
+                    }
+                    player={
+                      player
+                    }
+                    selected={
+                      trainingPlayerId ===
+                      player.id
+                    }
+                    onClick={() =>
+                      setTrainingPlayerId(
+                        player.id
+                      )
+                    }
+                  />
+                )
+              )}
           </div>
 
-          <h2 className="screen-subtitle training-program-title">
-            PROGRAM SEÇ
+          <h2 className="screen-subtitle program-heading">
+            2. PROGRAMI SEÇ
           </h2>
 
           <div className="training-plans">
             {trainingPlans.map(
-              (plan) => (
-                <button
-                  type="button"
-                  key={plan.id}
-                  className="training-plan"
-                  onClick={() =>
-                    startTraining(
-                      plan
-                    )
-                  }
-                >
-                  <span>
-                    {plan.duration}
-                  </span>
+              (plan) => {
+                const cost =
+                  calculateTrainingCost(
+                    plan,
 
-                  <h3>
-                    {plan.title}
-                  </h3>
+                    trainingPlayer
+                      ?.overall ||
+                      15
+                  );
 
-                  <strong>
-                    +{plan.gain} GEN
-                  </strong>
+                return (
+                  <button
+                    type="button"
+                    key={
+                      plan.id
+                    }
+                    className="training-plan"
+                    onClick={() =>
+                      startTraining(
+                        plan
+                      )
+                    }
+                  >
+                    <span>
+                      {
+                        plan.duration
+                      }
+                    </span>
 
-                  <small>
-                    🪙 {plan.cost}
-                  </small>
-                </button>
-              )
+                    <h3>
+                      {
+                        plan.title
+                      }
+                    </h3>
+
+                    <strong>
+                      +
+                      {
+                        plan.gain
+                      }{" "}
+                      GEN
+                    </strong>
+
+                    <small>
+                      🪙{" "}
+                      {cost.toLocaleString()}
+                    </small>
+                  </button>
+                );
+              }
             )}
           </div>
         </main>
@@ -2658,7 +3318,8 @@ function App() {
   }
 
   if (
-    screen === "transfers"
+    screen ===
+    "transfers"
   ) {
     return (
       <div className="game-screen">
@@ -2666,27 +3327,98 @@ function App() {
         <Notice />
 
         <main className="page-content">
-          <button
-            className="back-link"
+          <BackButton
             onClick={goHome}
-          >
-            ← ANA MENÜ
-          </button>
+          />
 
-          <div className="page-heading">
+          <PageHeading
+            label="KULÜP YÖNETİMİ"
+            title="TRANSFERLER"
+            text="GEN yükseldikçe fiyat yükselir. İlerledikçe pazarda daha güçlü kartlar açılır."
+            stat={`MAX ${game.marketCap}`}
+          />
+
+          <div className="custom-player-box">
             <div>
               <div className="section-label">
-                KULÜP YÖNETİMİ
+                KENDİ YILDIZINI
+                YARAT
               </div>
 
-              <h1>
-                TRANSFERLER
-              </h1>
+              <h2>
+                FUTBOLCU
+                OLUŞTUR
+              </h2>
 
               <p>
-                Güçlü futbolcu daha pahalıdır.
+                15 GEN başlar.
+                Onu antrenmanlarla
+                oyunun sonuna kadar
+                geliştirebilirsin.
               </p>
             </div>
+
+            <div className="custom-player-form">
+              <input
+                value={
+                  customName
+                }
+                onChange={(event) =>
+                  setCustomName(
+                    event.target
+                      .value
+                  )
+                }
+                placeholder="Oyuncu adı"
+                maxLength={24}
+              />
+
+              <select
+                value={
+                  customPosition
+                }
+                onChange={(event) =>
+                  setCustomPosition(
+                    event.target
+                      .value
+                  )
+                }
+              >
+                {positions.map(
+                  (position) => (
+                    <option
+                      key={
+                        position
+                      }
+                      value={
+                        position
+                      }
+                    >
+                      {
+                        position
+                      }
+                    </option>
+                  )
+                )}
+              </select>
+
+              <button
+                type="button"
+                className="primary-button"
+                onClick={
+                  createMyPlayer
+                }
+              >
+                OLUŞTUR • 🪙
+                750
+              </button>
+            </div>
+          </div>
+
+          <div className="section-toolbar">
+            <h2 className="screen-subtitle">
+              TRANSFER PAZARI
+            </h2>
 
             <button
               type="button"
@@ -2699,74 +3431,13 @@ function App() {
             </button>
           </div>
 
-          <div className="custom-player-box">
-            <div>
-              <div className="section-label">
-                KENDİ FUTBOLCUN
-              </div>
-
-              <h2>
-                OYUNCU OLUŞTUR
-              </h2>
-
-              <p>
-                15 GEN başlar. Antrenmanlarla kendi yıldızını geliştir.
-              </p>
-            </div>
-
-            <div className="custom-player-form">
-              <input
-                value={customName}
-                onChange={(event) =>
-                  setCustomName(
-                    event.target.value
-                  )
-                }
-                placeholder="Oyuncu adı"
-              />
-
-              <select
-                value={
-                  customPosition
-                }
-                onChange={(event) =>
-                  setCustomPosition(
-                    event.target.value
-                  )
-                }
-              >
-                {positions.map(
-                  (position) => (
-                    <option
-                      key={position}
-                    >
-                      {position}
-                    </option>
-                  )
-                )}
-              </select>
-
-              <button
-                className="primary-button"
-                type="button"
-                onClick={
-                  createMyPlayer
-                }
-              >
-                OLUŞTUR • 🪙 750
-              </button>
-            </div>
-          </div>
-
-          <h2 className="screen-subtitle">
-            TRANSFER PAZARI
-          </h2>
-
           <div className="collection-grid">
             {game.market.map(
               (player) => (
                 <PlayerCard
-                  key={player.id}
+                  key={
+                    player.id
+                  }
                   player={player}
                   price={
                     player.price
@@ -2785,9 +3456,7 @@ function App() {
     );
   }
 
-  if (
-    screen === "events"
-  ) {
+  if (screen === "events") {
     if (battle) {
       return (
         <div className="game-screen">
@@ -2801,8 +3470,15 @@ function App() {
     }
 
     const opponentStrength =
-      streetOpponentStrength(
-        game.street.match
+      eventOpponentStrength(
+        activeEvent,
+
+        activeEventState
+      );
+
+    const unlocked =
+      isEventUnlocked(
+        activeEventIndex
       );
 
     return (
@@ -2811,81 +3487,194 @@ function App() {
         <Notice />
 
         <main className="page-content">
-          <button
-            className="back-link"
+          <BackButton
             onClick={goHome}
-          >
-            ← ANA MENÜ
-          </button>
+          />
 
-          <div className="street-hero">
+          <PageHeading
+            label="ETKİNLİK YOLU"
+            title="ETKİNLİKLER"
+            text="Kart kaybı yok. Etkinlik parası kazan, özel mağazadan oyuncu al ve bir sonraki sahayı aç."
+            stat={`${eventConfigs.filter(
+              (_, index) =>
+                isEventUnlocked(
+                  index
+                )
+            ).length}/${eventConfigs.length}`}
+          />
+
+          <div className="event-selector">
+            {eventConfigs.map(
+              (
+                event,
+                index
+              ) => {
+                const eventState =
+                  game.events[
+                    event.id
+                  ];
+
+                const eventUnlocked =
+                  isEventUnlocked(
+                    index
+                  );
+
+                return (
+                  <button
+                    type="button"
+                    key={
+                      event.id
+                    }
+                    className={`event-selector-card ${
+                      activeEventId ===
+                      event.id
+                        ? "active"
+                        : ""
+                    }`}
+                    disabled={
+                      !eventUnlocked
+                    }
+                    onClick={() =>
+                      setActiveEventId(
+                        event.id
+                      )
+                    }
+                  >
+                    <span>
+                      {
+                        event.icon
+                      }
+                    </span>
+
+                    <div>
+                      <b>
+                        {
+                          event.name
+                        }
+                      </b>
+
+                      <small>
+                        {eventUnlocked
+                          ? eventState.completed
+                            ? "✓ TAMAMLANDI"
+                            : `${eventState.match}/${event.matches} MAÇ`
+                          : "🔒 KİLİTLİ"}
+                      </small>
+                    </div>
+                  </button>
+                );
+              }
+            )}
+          </div>
+
+          <section
+            className={`event-hero ${
+              unlocked
+                ? ""
+                : "locked-panel"
+            }`}
+          >
             <div>
               <div className="section-label">
-                ETKİNLİK 01
+                ETKİNLİK{" "}
+                {activeEventIndex +
+                  1}
               </div>
 
               <h1>
-                🏚️ SOKAK FUTBOLU
+                {
+                  activeEvent.icon
+                }{" "}
+                {
+                  activeEvent.name
+                }
               </h1>
 
               <p>
-                25 maç. Kart kaybı yok.
+                {
+                  activeEvent.matches
+                }{" "}
+                maç •{" "}
+                {
+                  activeEvent.min
+                }
+                –
+                {
+                  activeEvent.max
+                }{" "}
+                GEN • Kart kaybı
+                yok.
               </p>
             </div>
 
-            <div className="street-currency">
-              🟠{" "}
-              {game.street.streetCoins}
+            <div className="event-currency">
+              {
+                activeEvent.currencyIcon
+              }{" "}
+              {activeEventState.currency.toLocaleString()}
             </div>
-          </div>
+          </section>
 
-          <div className="event-progress">
+          <div className="event-stats">
             <div>
               <span>
                 İLERLEME
               </span>
 
               <strong>
-                {game.street.completed
-                  ? "25 / 25"
-                  : `${game.street.match} / 25`}
+                {
+                  activeEventState.match
+                }
+                /
+                {
+                  activeEvent.matches
+                }
               </strong>
             </div>
 
             <div>
-              <span>
-                RAKİP
-              </span>
+              <span>RAKİP</span>
 
               <strong>
-                ~{opponentStrength} GEN
+                ~
+                {
+                  opponentStrength
+                }{" "}
+                GEN
               </strong>
             </div>
 
             <div>
-              <span>
-                DESTE
-              </span>
+              <span>DESTE</span>
 
               <strong>
-                {game.squad.length}/10
+                {
+                  game.squad
+                    .length
+                }
+                /10
               </strong>
             </div>
           </div>
 
           <button
             type="button"
-            className="event-play-button"
+            className="primary-wide-button"
             disabled={
-              game.street.completed
+              !unlocked ||
+              activeEventState.completed
             }
-            onClick={
-              startStreetBattle
+            onClick={() =>
+              startEventBattle(
+                activeEvent.id
+              )
             }
           >
-            {game.street.completed
+            {activeEventState.completed
               ? "ETKİNLİK TAMAMLANDI"
-              : `MAÇ ${game.street.match}'E GİR`}
+              : unlocked
+                ? `MAÇ ${activeEventState.match}'E GİR`
+                : "ÖNCEKİ ETKİNLİĞİ TAMAMLA"}
           </button>
 
           <div className="event-shop-heading">
@@ -2895,23 +3684,37 @@ function App() {
               </div>
 
               <h2>
-                SOKAK PAZARI
+                {activeEvent.name.toUpperCase()}{" "}
+                PAZARI
               </h2>
+            </div>
+
+            <div className="event-currency small">
+              {
+                activeEvent.currencyIcon
+              }{" "}
+              {activeEventState.currency.toLocaleString()}
             </div>
           </div>
 
           <div className="collection-grid">
-            {game.streetShop.map(
+            {activeEventState.shop.map(
               (player) => (
                 <PlayerCard
-                  key={player.id}
+                  key={
+                    player.id
+                  }
                   player={player}
                   price={
                     player.eventPrice
                   }
-                  currency="street"
+                  currencyIcon={
+                    activeEvent.currencyIcon
+                  }
                   onClick={() =>
-                    buyStreetPlayer(
+                    buyEventPlayer(
+                      activeEvent.id,
+
                       player.id
                     )
                   }
@@ -2924,9 +3727,7 @@ function App() {
     );
   }
 
-  if (
-    screen === "career"
-  ) {
+  if (screen === "career") {
     if (battle) {
       return (
         <div className="game-screen">
@@ -2941,8 +3742,11 @@ function App() {
 
     const leagueIndex =
       Math.min(
-        game.career.leagueIndex,
-        careerLeagues.length - 1
+        game.career
+          .leagueIndex,
+
+        careerLeagues.length -
+          1
       );
 
     const league =
@@ -2959,65 +3763,76 @@ function App() {
         <Notice />
 
         <main className="page-content">
-          <button
-            className="back-link"
+          <BackButton
             onClick={goHome}
-          >
-            ← ANA MENÜ
-          </button>
+          />
 
-          <div className="career-hero">
+          <section className="career-hero">
             <div>
               <div className="section-label">
-                KARİYER MODU
+                RİSK MODU
               </div>
 
               <h1>
-                {game.career.completed
+                {game.career
+                  .completed
                   ? "KARİYER TAMAMLANDI"
                   : league.name}
               </h1>
 
               <p>
-                Kazanırsan rakipten kart alırsın. Kaybedersen kendi 10 kartından birini verirsin.
+                Kazanırsan
+                rakipten rastgele
+                bir kart ve Coin
+                alırsın.
+                Kaybedersen kendi
+                10 kartından birini
+                vermek zorundasın.
               </p>
             </div>
 
-            <div className="career-risk-badge">
+            <div className="risk-badge">
               ⚠️ KART KAYBI
+              AÇIK
             </div>
-          </div>
+          </section>
 
           <div className="career-stats">
             <div>
-              <span>
-                LİG
-              </span>
+              <span>LİG</span>
 
               <strong>
-                {leagueIndex + 1}/
-                {careerLeagues.length}
+                {leagueIndex + 1}
+                /
+                {
+                  careerLeagues.length
+                }
               </strong>
             </div>
 
             <div>
-              <span>
-                MAÇ
-              </span>
+              <span>MAÇ</span>
 
               <strong>
-                {game.career.match}/
-                {league.matches}
+                {
+                  game.career
+                    .match
+                }
+                /
+                {
+                  league.matches
+                }
               </strong>
             </div>
 
             <div>
-              <span>
-                RAKİP
-              </span>
+              <span>RAKİP</span>
 
               <strong>
-                ~{opponentStrength}
+                ~
+                {
+                  opponentStrength
+                }
               </strong>
             </div>
 
@@ -3027,38 +3842,44 @@ function App() {
               </span>
 
               <strong>
-                {game.career.wins}
+                {
+                  game.career
+                    .wins
+                }
               </strong>
             </div>
           </div>
 
-          {!game.career.completed && (
-            <button
-              type="button"
-              className="career-play-button"
-              onClick={
-                startCareerBattle
-              }
-            >
-              ⚔️ MAÇ{" "}
-              {game.career.match}
-              'E GİR
-            </button>
-          )}
+          <button
+            type="button"
+            className="career-play-button"
+            disabled={
+              game.career
+                .completed
+            }
+            onClick={
+              startCareerBattle
+            }
+          >
+            {game.career.completed
+              ? "KARİYER TAMAMLANDI"
+              : `⚔️ MAÇ ${game.career.match}'E GİR`}
+          </button>
 
-          <div className="career-road-title">
+          <div className="career-road-heading">
             <div className="section-label">
               KARİYER YOLU
             </div>
 
-            <h2>
-              LİGLER
-            </h2>
+            <h2>LİGLER</h2>
           </div>
 
           <div className="career-road">
             {careerLeagues.map(
-              (item, index) => {
+              (
+                item,
+                index
+              ) => {
                 const completed =
                   game.career.completed ||
                   index <
@@ -3073,14 +3894,16 @@ function App() {
 
                 return (
                   <div
-                    key={item.name}
-                    className={`career-league-card ${
+                    key={
+                      item.name
+                    }
+                    className={`league-card ${
                       completed
-                        ? "career-league-complete"
+                        ? "complete"
                         : ""
                     } ${
                       current
-                        ? "career-league-current"
+                        ? "current"
                         : ""
                     }`}
                   >
@@ -3093,12 +3916,19 @@ function App() {
                     </span>
 
                     <h3>
-                      {item.name}
+                      {
+                        item.name
+                      }
                     </h3>
 
                     <p>
                       {item.min}–
                       {item.max} GEN
+                      •{" "}
+                      {
+                        item.matches
+                      }{" "}
+                      maç
                     </p>
                   </div>
                 );
@@ -3124,6 +3954,14 @@ function App() {
           <h1>
             {game.clubName}
           </h1>
+
+          <p>
+            Kulübünü büyüt,
+            kendi yıldızını
+            geliştir ve kart
+            savaşlarının zirvesine
+            çık.
+          </p>
         </section>
 
         <section className="club-overview">
@@ -3139,191 +3977,212 @@ function App() {
 
           <div>
             <strong>
-              {game.squad.length}/10
+              {
+                game.squad
+                  .length
+              }
+              /10
             </strong>
 
             <span>
-              DESTE
+              MAÇ DESTESİ
             </span>
           </div>
 
           <div>
             <strong>
-              {game.collection.length}
+              {
+                game.collection
+                  .length
+              }
             </strong>
 
-            <span>
-              KART
-            </span>
+            <span>KART</span>
           </div>
 
           <div>
             <strong>
-              {game.trainingCap}
+              {
+                game.trainingCap
+              }
             </strong>
 
             <span>
-              ANTRENMAN
+              GELİŞİM MAX
             </span>
           </div>
         </section>
 
         <section className="menu-grid">
-          <button
-            className="menu-card career-card"
+          <MenuCard
+            icon="⚔️"
+            label="RİSK MODU"
+            title="KARİYER"
             onClick={() =>
-              setScreen("career")
+              setScreen(
+                "career"
+              )
             }
-          >
-            <div className="menu-icon">
-              ⚔️
-            </div>
+          />
 
-            <div>
-              <span>
-                RİSK MODU
-              </span>
-
-              <h2>
-                KARİYER
-              </h2>
-            </div>
-          </button>
-
-          <button
-            className="menu-card event-card"
+          <MenuCard
+            icon="🏚️"
+            label="10 AŞAMA"
+            title="ETKİNLİKLER"
             onClick={() =>
-              setScreen("events")
+              setScreen(
+                "events"
+              )
             }
-          >
-            <div className="menu-icon">
-              🏚️
-            </div>
+          />
 
-            <div>
-              <span>
-                TURNUVA
-              </span>
-
-              <h2>
-                ETKİNLİK
-              </h2>
-            </div>
-          </button>
-
-          <button
-            className="menu-card"
+          <MenuCard
+            icon="🛡️"
+            label={`${game.squad.length}/10`}
+            title="TAKIMIM"
             onClick={() =>
-              setScreen("squad")
+              setScreen(
+                "squad"
+              )
             }
-          >
-            <div className="menu-icon">
-              🛡️
-            </div>
+          />
 
-            <div>
-              <span>
-                10 KART
-              </span>
-
-              <h2>
-                TAKIM
-              </h2>
-            </div>
-          </button>
-
-          <button
-            className="menu-card"
+          <MenuCard
+            icon="🎴"
+            label={`${game.collection.length} KART`}
+            title="KOLEKSİYON"
             onClick={() =>
               setScreen(
                 "collection"
               )
             }
-          >
-            <div className="menu-icon">
-              🎴
-            </div>
+          />
 
-            <div>
-              <span>
-                KARTLAR
-              </span>
-
-              <h2>
-                KOLEKSİYON
-              </h2>
-            </div>
-          </button>
-
-          <button
-            className="menu-card training-card"
+          <MenuCard
+            icon="🏋️"
+            label="GERÇEK ZAMAN"
+            title="ANTRENMAN"
             onClick={() =>
               setScreen(
                 "training"
               )
             }
-          >
-            <div className="menu-icon">
-              🏋️
-            </div>
+          />
 
-            <div>
-              <span>
-                GELİŞİM
-              </span>
-
-              <h2>
-                ANTRENMAN
-              </h2>
-            </div>
-          </button>
-
-          <button
-            className="menu-card transfer-card"
+          <MenuCard
+            icon="🤝"
+            label={`MAX ${game.marketCap} GEN`}
+            title="TRANSFER"
             onClick={() =>
               setScreen(
                 "transfers"
               )
             }
-          >
-            <div className="menu-icon">
-              🤝
-            </div>
+          />
 
-            <div>
-              <span>
-                PAZAR
-              </span>
-
-              <h2>
-                TRANSFER
-              </h2>
-            </div>
-          </button>
-
-          <button
-            className="daily-card mobile-daily"
-            type="button"
+          <MenuCard
+            icon="🎁"
+            label={`SERİ ${game.daily.streak}/7`}
+            title="GÜNLÜK ÖDÜL"
             onClick={
               collectDailyReward
             }
-          >
-            <div className="menu-icon">
-              🎁
-            </div>
+          />
 
-            <div>
-              <span>
-                +300 COIN
-              </span>
-
-              <h2>
-                GÜNLÜK ÖDÜL
-              </h2>
-            </div>
-          </button>
+          <MenuCard
+            icon={
+              installed
+                ? "✅"
+                : "📲"
+            }
+            label={
+              installed
+                ? "KURULU"
+                : "PWA"
+            }
+            title={
+              installed
+                ? "UYGULAMA"
+                : "YÜKLE"
+            }
+            onClick={
+              installApp
+            }
+          />
         </section>
       </main>
+    </div>
+  );
+}
+
+function MenuCard({
+  icon,
+  label,
+  title,
+  onClick,
+}) {
+  return (
+    <button
+      type="button"
+      className="menu-card"
+      onClick={onClick}
+    >
+      <div className="menu-icon">
+        {icon}
+      </div>
+
+      <div>
+        <span>
+          {label}
+        </span>
+
+        <h2>
+          {title}
+        </h2>
+      </div>
+    </button>
+  );
+}
+
+function BackButton({
+  onClick,
+}) {
+  return (
+    <button
+      type="button"
+      className="back-link"
+      onClick={onClick}
+    >
+      ← ANA MENÜ
+    </button>
+  );
+}
+
+function PageHeading({
+  label,
+  title,
+  text,
+  stat,
+}) {
+  return (
+    <div className="page-heading">
+      <div>
+        <div className="section-label">
+          {label}
+        </div>
+
+        <h1>
+          {title}
+        </h1>
+
+        <p>
+          {text}
+        </p>
+      </div>
+
+      <div className="heading-stat">
+        {stat}
+      </div>
     </div>
   );
 }
