@@ -29,6 +29,11 @@ const SAVE_KEY =
 
 const SAVE_VERSION = 4;
 
+const HOME_HISTORY = {
+  scw: true,
+  view: "home",
+};
+
 function createEventStates(
   withShops = false
 ) {
@@ -36,12 +41,9 @@ function createEventStates(
     eventConfigs.map(
       (event, index) => [
         event.id,
-
         {
           match: 1,
-
           currency: 0,
-
           completed: false,
 
           shop: withShops
@@ -492,7 +494,8 @@ function App() {
         );
       }
     } catch {
-      // Bozuk kayıt.
+      // Bozuk kayıt varsa
+      // yeni oyun açılır.
     }
 
     return createBlankGame();
@@ -504,6 +507,79 @@ function App() {
       JSON.stringify(game)
     );
   }, [game]);
+
+  /*
+    ANDROID / PWA GERİ TUŞU
+
+    Ana menü uygulamanın temel
+    history noktasıdır.
+
+    Bir bölüme girildiğinde yeni
+    history kaydı eklenir.
+
+    Maça girildiğinde bir history
+    kaydı daha eklenir.
+
+    Böylece Android geri tuşu:
+    battle -> bölüm -> home -> exit
+    şeklinde çalışır.
+  */
+  useEffect(() => {
+    const currentState =
+      window.history.state;
+
+    if (
+      !currentState?.scw
+    ) {
+      window.history.replaceState(
+        HOME_HISTORY,
+        "",
+        window.location.href
+      );
+    }
+
+    function handlePopState(
+      event
+    ) {
+      const state =
+        event.state;
+
+      setBattle(null);
+
+      if (
+        state?.scw &&
+        state.view ===
+          "screen" &&
+        state.screen
+      ) {
+        setScreen(
+          state.screen
+        );
+
+        return;
+      }
+
+      if (
+        state?.scw &&
+        state.view ===
+          "home"
+      ) {
+        setScreen("home");
+      }
+    }
+
+    window.addEventListener(
+      "popstate",
+      handlePopState
+    );
+
+    return () => {
+      window.removeEventListener(
+        "popstate",
+        handlePopState
+      );
+    };
+  }, []);
 
   useEffect(() => {
     const timer =
@@ -721,10 +797,96 @@ function App() {
     setNotice(message);
   }
 
+  function openScreen(
+    nextScreen
+  ) {
+    setBattle(null);
+
+    setScreen(
+      nextScreen
+    );
+
+    window.history.pushState(
+      {
+        scw: true,
+
+        view:
+          "screen",
+
+        screen:
+          nextScreen,
+      },
+
+      "",
+
+      window.location.href
+    );
+  }
+
+  function pushBattleHistory(
+    parentScreen
+  ) {
+    window.history.pushState(
+      {
+        scw: true,
+
+        view:
+          "battle",
+
+        parent:
+          parentScreen,
+      },
+
+      "",
+
+      window.location.href
+    );
+  }
+
   function goHome() {
+    if (battle) {
+      const state =
+        window.history.state;
+
+      if (
+        state?.scw &&
+        state.view ===
+          "battle"
+      ) {
+        window.history.go(
+          -2
+        );
+
+        return;
+      }
+    }
+
+    if (
+      screen !== "home"
+    ) {
+      const state =
+        window.history.state;
+
+      if (
+        state?.scw &&
+        state.view ===
+          "screen"
+      ) {
+        window.history.back();
+
+        return;
+      }
+    }
+
     setBattle(null);
 
     setScreen("home");
+
+    window.history.replaceState(
+      HOME_HISTORY,
+      "",
+      window.location.href
+    );
   }
 
   function isEventUnlocked(
@@ -790,6 +952,12 @@ function App() {
     );
 
     setNotice("");
+
+    window.history.replaceState(
+      HOME_HISTORY,
+      "",
+      window.location.href
+    );
   }
 
   function createClub() {
@@ -839,6 +1007,12 @@ function App() {
     });
 
     setScreen("home");
+
+    window.history.replaceState(
+      HOME_HISTORY,
+      "",
+      window.location.href
+    );
 
     showNotice(
       `${cleanName} kuruldu. İlk 10 futbolcun hazır.`
@@ -1487,6 +1661,10 @@ function App() {
       })
     );
 
+    pushBattleHistory(
+      "events"
+    );
+
     setNotice("");
   }
 
@@ -1528,6 +1706,10 @@ function App() {
           game.career
             .leagueIndex,
       })
+    );
+
+    pushBattleHistory(
+      "career"
     );
 
     setNotice("");
@@ -2168,6 +2350,19 @@ function App() {
   }
 
   function closeBattle() {
+    const state =
+      window.history.state;
+
+    if (
+      state?.scw &&
+      state.view ===
+        "battle"
+    ) {
+      window.history.back();
+
+      return;
+    }
+
     setBattle(null);
   }
 
@@ -4019,7 +4214,7 @@ function App() {
             label="RİSK MODU"
             title="KARİYER"
             onClick={() =>
-              setScreen(
+              openScreen(
                 "career"
               )
             }
@@ -4030,7 +4225,7 @@ function App() {
             label="10 AŞAMA"
             title="ETKİNLİKLER"
             onClick={() =>
-              setScreen(
+              openScreen(
                 "events"
               )
             }
@@ -4041,7 +4236,7 @@ function App() {
             label={`${game.squad.length}/10`}
             title="TAKIMIM"
             onClick={() =>
-              setScreen(
+              openScreen(
                 "squad"
               )
             }
@@ -4052,7 +4247,7 @@ function App() {
             label={`${game.collection.length} KART`}
             title="KOLEKSİYON"
             onClick={() =>
-              setScreen(
+              openScreen(
                 "collection"
               )
             }
@@ -4063,7 +4258,7 @@ function App() {
             label="GERÇEK ZAMAN"
             title="ANTRENMAN"
             onClick={() =>
-              setScreen(
+              openScreen(
                 "training"
               )
             }
@@ -4074,7 +4269,7 @@ function App() {
             label={`MAX ${game.marketCap} GEN`}
             title="TRANSFER"
             onClick={() =>
-              setScreen(
+              openScreen(
                 "transfers"
               )
             }
