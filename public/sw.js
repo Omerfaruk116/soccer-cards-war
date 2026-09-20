@@ -1,5 +1,4 @@
-const CACHE_NAME =
-  "scw-v1.0.0";
+const CACHE_NAME = "scw-v1.0.1";
 
 const APP_SHELL = [
   "./",
@@ -7,121 +6,60 @@ const APP_SHELL = [
   "./icons/icon.svg",
 ];
 
-self.addEventListener(
-  "install",
-  (event) => {
-    event.waitUntil(
-      caches
-        .open(
-          CACHE_NAME
-        )
-        .then((cache) =>
-          cache.addAll(
-            APP_SHELL
-          )
-        )
-    );
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  );
+});
 
-    self.skipWaiting();
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => caches.delete(key))
+        )
+      )
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") {
+    return;
   }
-);
 
-self.addEventListener(
-  "activate",
-  (event) => {
-    event.waitUntil(
-      caches
-        .keys()
-        .then((keys) =>
-          Promise.all(
-            keys
-              .filter(
-                (key) =>
-                  key !==
-                  CACHE_NAME
-              )
-              .map((key) =>
-                caches.delete(
-                  key
-                )
-              )
-          )
-        )
-        .then(() =>
-          self.clients.claim()
-        )
-    );
+  const requestUrl = new URL(event.request.url);
+
+  if (requestUrl.origin !== self.location.origin) {
+    return;
   }
-);
 
-self.addEventListener(
-  "fetch",
-  (event) => {
-    if (
-      event.request
-        .method !==
-      "GET"
-    ) {
-      return;
-    }
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      const networkResponse = fetch(event.request)
+        .then((response) => {
+          if (response && response.ok) {
+            const responseClone = response.clone();
 
-    const url =
-      new URL(
-        event.request.url
-      );
-
-    if (
-      url.origin !==
-      self.location.origin
-    ) {
-      return;
-    }
-
-    event.respondWith(
-      caches
-        .match(
-          event.request
-        )
-        .then((cached) => {
-          const network =
-            fetch(
-              event.request
-            )
-              .then(
-                (response) => {
-                  if (
-                    response &&
-                    response.ok
-                  ) {
-                    const copy =
-                      response.clone();
-
-                    caches
-                      .open(
-                        CACHE_NAME
-                      )
-                      .then(
-                        (cache) =>
-                          cache.put(
-                            event.request,
-                            copy
-                          )
-                      );
-                  }
-
-                  return response;
-                }
-              )
-              .catch(
-                () =>
-                  cached
+            caches
+              .open(CACHE_NAME)
+              .then((cache) =>
+                cache.put(event.request, responseClone)
               );
+          }
 
-          return (
-            cached ||
-            network
-          );
+          return response;
         })
-    );
-  }
-);
+        .catch(() => cachedResponse);
+
+      return cachedResponse || networkResponse;
+    })
+  );
+});

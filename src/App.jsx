@@ -7,6 +7,7 @@ import {
 import PlayerCard from "./components/PlayerCard";
 
 import {
+  calculatePlayerPrice,
   calculateTrainingCost,
   careerLeagues,
   createCustomPlayer,
@@ -29,10 +30,237 @@ const SAVE_KEY =
 
 const SAVE_VERSION = 4;
 
+const STORE_TEST_MODE = true;
+
+const COIN_PACKAGES = [
+  {
+    id: "coins-3000",
+    coins: 3000,
+    price: "$1.00",
+    paymentUrl: "",
+  },
+  {
+    id: "coins-5000",
+    coins: 5000,
+    price: "$1.50",
+    paymentUrl: "",
+  },
+  {
+    id: "coins-12000",
+    coins: 12000,
+    price: "$3.00",
+    paymentUrl: "",
+  },
+  {
+    id: "coins-30000",
+    coins: 30000,
+    price: "$6.00",
+    paymentUrl: "",
+  },
+  {
+    id: "coins-75000",
+    coins: 75000,
+    price: "$12.00",
+    paymentUrl: "",
+  },
+];
+
 const HOME_HISTORY = {
   scw: true,
   view: "home",
 };
+
+const EXTRA_UI_CSS = `
+  .store-test-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    margin: 0 0 18px;
+    border: 1px solid #675226;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #19140c, #0c1015);
+  }
+
+  .store-test-banner strong {
+    color: #e4b65c;
+    font-size: 13px;
+  }
+
+  .store-test-banner span {
+    color: #8d96a2;
+    font-size: 10px;
+    text-align: right;
+  }
+
+  .coupon-box {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+    border: 1px solid #313944;
+    border-radius: 14px;
+    background: linear-gradient(145deg, #11161d, #0a0d11);
+  }
+
+  .coupon-copy {
+    grid-column: 1 / -1;
+  }
+
+  .coupon-copy h2 {
+    margin: 3px 0 4px;
+  }
+
+  .coupon-copy p {
+    margin: 0;
+    color: #7f8995;
+    font-size: 11px;
+  }
+
+  .coupon-box input {
+    min-width: 0;
+  }
+
+  .coin-pack-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .coin-pack-card {
+    padding: 18px 14px;
+    border: 1px solid #343b45;
+    border-radius: 14px;
+    background: linear-gradient(145deg, #12171d, #090c10);
+    text-align: center;
+  }
+
+  .coin-pack-card .coin-pack-icon {
+    font-size: 29px;
+  }
+
+  .coin-pack-card h3 {
+    margin: 8px 0 2px;
+    font-size: 20px;
+  }
+
+  .coin-pack-card p {
+    margin: 0 0 12px;
+    color: #8a939f;
+    font-size: 11px;
+  }
+
+  .coin-pack-card button {
+    width: 100%;
+  }
+
+  .sell-section {
+    margin-top: 30px;
+  }
+
+  .sell-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .sell-player-box {
+    min-width: 0;
+  }
+
+  .sell-button {
+    width: 100%;
+    min-height: 38px;
+    margin-top: 7px;
+    border: 1px solid #70463a;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #4a2821, #271713);
+    color: #f2b29f;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .sell-button:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+
+  .training-speed-box {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 7px;
+  }
+
+  .training-speed-cost {
+    color: #e1b258;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .training-speed-button {
+    min-height: 42px;
+    padding: 0 15px;
+    border: 1px solid #785b25;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #6c4d18, #37260d);
+    color: #ffd982;
+    font-weight: 950;
+    cursor: pointer;
+  }
+
+  .training-speed-button:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+
+  .store-security-note {
+    margin-top: 18px;
+    padding: 13px 15px;
+    border-radius: 12px;
+    background: #0d1116;
+    border: 1px solid #262d35;
+    color: #737d89;
+    font-size: 10px;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 700px) {
+    .coin-pack-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sell-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .training-speed-box {
+      align-items: stretch;
+      width: 100%;
+    }
+
+    .training-running {
+      flex-wrap: wrap;
+    }
+  }
+
+  @media (max-width: 390px) {
+    .coupon-box {
+      grid-template-columns: 1fr;
+    }
+
+    .coupon-copy {
+      grid-column: 1;
+    }
+
+    .coin-pack-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+  }
+`;
 
 function createEventStates(
   withShops = false
@@ -45,7 +273,6 @@ function createEventStates(
           match: 1,
           currency: 0,
           completed: false,
-
           shop: withShops
             ? generateEventShop(
                 event,
@@ -83,6 +310,10 @@ function createBlankGame() {
 
     trainingCap: 30,
 
+    redeemedCoupons: [],
+
+    storePurchases: [],
+
     events:
       createEventStates(
         false
@@ -90,17 +321,13 @@ function createBlankGame() {
 
     career: {
       leagueIndex: 0,
-
       match: 1,
-
       wins: 0,
-
       completed: false,
     },
 
     daily: {
       lastClaim: "",
-
       streak: 0,
     },
   };
@@ -132,7 +359,6 @@ function normalizeGame(saved) {
       ] = {
         match: Math.max(
           1,
-
           oldEvent?.match ??
             (event.id ===
             "street"
@@ -145,7 +371,6 @@ function normalizeGame(saved) {
         currency:
           Math.max(
             0,
-
             oldEvent
               ?.currency ??
               (event.id ===
@@ -193,9 +418,7 @@ function normalizeGame(saved) {
 
   return {
     ...blank,
-
     ...saved,
-
     saveVersion:
       SAVE_VERSION,
 
@@ -234,22 +457,33 @@ function normalizeGame(saved) {
         saved.trainingCap
       ) || 30,
 
+    redeemedCoupons:
+      Array.isArray(
+        saved.redeemedCoupons
+      )
+        ? saved.redeemedCoupons
+        : [],
+
+    storePurchases:
+      Array.isArray(
+        saved.storePurchases
+      )
+        ? saved.storePurchases
+        : [],
+
     events:
       normalizedEvents,
 
     career: {
       ...blank.career,
-
       ...(saved.career ||
         {}),
     },
 
     daily: {
       ...blank.daily,
-
       ...(saved.daily ||
         {}),
-
       lastClaim:
         saved.daily
           ?.lastClaim ||
@@ -275,7 +509,6 @@ function averageOverall(
       ) =>
         sum +
         player.overall,
-
       0
     ) / players.length
   );
@@ -388,6 +621,54 @@ function dateKeyToNumber(
   );
 }
 
+function calculateSellPrice(
+  player
+) {
+  const fullPrice =
+    calculatePlayerPrice(
+      player.overall
+    );
+
+  return Math.max(
+    50,
+    Math.floor(
+      fullPrice * 0.6
+    )
+  );
+}
+
+function calculateSpeedUpCost(
+  training,
+  now
+) {
+  if (!training) {
+    return 0;
+  }
+
+  const remaining =
+    Math.max(
+      0,
+      training.endsAt -
+        now
+    );
+
+  if (!remaining) {
+    return 0;
+  }
+
+  const quarterHours =
+    Math.ceil(
+      remaining /
+        (15 * 60 *
+          1000)
+    );
+
+  return Math.max(
+    50,
+    quarterHours * 60
+  );
+}
+
 function App() {
   const [
     started,
@@ -440,6 +721,11 @@ function App() {
     trainingPlayerId,
     setTrainingPlayerId,
   ] = useState(null);
+
+  const [
+    couponInput,
+    setCouponInput,
+  ] = useState("");
 
   const [
     installPrompt,
@@ -508,22 +794,31 @@ function App() {
     );
   }, [game]);
 
-  /*
-    ANDROID / PWA GERİ TUŞU
+  useEffect(() => {
+    if (
+      document.getElementById(
+        "scw-extra-ui-styles"
+      )
+    ) {
+      return;
+    }
 
-    Ana menü uygulamanın temel
-    history noktasıdır.
+    const style =
+      document.createElement(
+        "style"
+      );
 
-    Bir bölüme girildiğinde yeni
-    history kaydı eklenir.
+    style.id =
+      "scw-extra-ui-styles";
 
-    Maça girildiğinde bir history
-    kaydı daha eklenir.
+    style.textContent =
+      EXTRA_UI_CSS;
 
-    Böylece Android geri tuşu:
-    battle -> bölüm -> home -> exit
-    şeklinde çalışır.
-  */
+    document.head.appendChild(
+      style
+    );
+  }, []);
+
   useEffect(() => {
     const currentState =
       window.history.state;
@@ -597,7 +892,6 @@ function App() {
     const handleInstallPrompt =
       (event) => {
         event.preventDefault();
-
         setInstallPrompt(
           event
         );
@@ -608,9 +902,7 @@ function App() {
         setInstallPrompt(
           null
         );
-
         setInstalled(true);
-
         setNotice(
           "Soccer Cards War telefona kuruldu."
         );
@@ -663,7 +955,6 @@ function App() {
       setGame(
         (previous) => ({
           ...previous,
-
           training: null,
         })
       );
@@ -674,7 +965,6 @@ function App() {
     const availableGain =
       Math.max(
         0,
-
         game.trainingCap -
           currentPlayer
             .overall
@@ -706,9 +996,7 @@ function App() {
 
               return {
                 ...player,
-
                 overall,
-
                 rarity:
                   getRarity(
                     overall
@@ -745,7 +1033,6 @@ function App() {
             )
           )
           .filter(Boolean),
-
       [
         game.squad,
         game.collection,
@@ -758,7 +1045,6 @@ function App() {
         averageOverall(
           squadPlayers
         ),
-
       [squadPlayers]
     );
 
@@ -791,6 +1077,12 @@ function App() {
       shop: [],
     };
 
+  const trainingSpeedCost =
+    calculateSpeedUpCost(
+      game.training,
+      now
+    );
+
   function showNotice(
     message
   ) {
@@ -801,7 +1093,6 @@ function App() {
     nextScreen
   ) {
     setBattle(null);
-
     setScreen(
       nextScreen
     );
@@ -809,16 +1100,11 @@ function App() {
     window.history.pushState(
       {
         scw: true,
-
-        view:
-          "screen",
-
+        view: "screen",
         screen:
           nextScreen,
       },
-
       "",
-
       window.location.href
     );
   }
@@ -829,16 +1115,11 @@ function App() {
     window.history.pushState(
       {
         scw: true,
-
-        view:
-          "battle",
-
+        view: "battle",
         parent:
           parentScreen,
       },
-
       "",
-
       window.location.href
     );
   }
@@ -856,7 +1137,6 @@ function App() {
         window.history.go(
           -2
         );
-
         return;
       }
     }
@@ -873,13 +1153,11 @@ function App() {
           "screen"
       ) {
         window.history.back();
-
         return;
       }
     }
 
     setBattle(null);
-
     setScreen("home");
 
     window.history.replaceState(
@@ -928,29 +1206,21 @@ function App() {
     setGame(
       createBlankGame()
     );
-
     setStarted(false);
-
     setScreen("home");
-
     setBattle(null);
-
     setClubNameInput("");
-
     setCustomName("");
-
     setCustomPosition(
       "ST"
     );
-
     setTrainingPlayerId(
       null
     );
-
+    setCouponInput("");
     setActiveEventId(
       "street"
     );
-
     setNotice("");
 
     window.history.replaceState(
@@ -968,7 +1238,6 @@ function App() {
       showNotice(
         "Önce kulübüne bir isim ver."
       );
-
       return;
     }
 
@@ -984,25 +1253,20 @@ function App() {
 
     setGame({
       ...createBlankGame(),
-
       clubName:
         cleanName,
-
       collection:
         starters,
-
       squad:
         starters.map(
           (player) =>
             player.id
         ),
-
       market:
         generateMarketPlayers(
           6,
           30
         ),
-
       events,
     });
 
@@ -1031,7 +1295,6 @@ function App() {
         ) {
           return {
             ...previous,
-
             squad:
               previous.squad.filter(
                 (id) =>
@@ -1048,16 +1311,13 @@ function App() {
           showNotice(
             "Maç desten dolu. Önce bir futbolcuyu çıkar."
           );
-
           return previous;
         }
 
         return {
           ...previous,
-
           squad: [
             ...previous.squad,
-
             playerId,
           ],
         };
@@ -1070,7 +1330,6 @@ function App() {
       showNotice(
         "Uygulama zaten kurulu."
       );
-
       return;
     }
 
@@ -1078,7 +1337,6 @@ function App() {
       showNotice(
         "Yükle seçeneği henüz hazır değil. Sayfada biraz kaldıktan sonra tekrar dene veya tarayıcı menüsündeki Yükle seçeneğini kullan."
       );
-
       return;
     }
 
@@ -1110,7 +1368,6 @@ function App() {
       showNotice(
         "Bugünkü günlük ödülünü zaten aldın."
       );
-
       return;
     }
 
@@ -1164,7 +1421,6 @@ function App() {
       const max =
         Math.min(
           99,
-
           Math.max(
             22,
             game.marketCap
@@ -1187,11 +1443,9 @@ function App() {
     setGame(
       (previous) => ({
         ...previous,
-
         coins:
           previous.coins +
           coinReward,
-
         collection:
           playerReward
             ? [
@@ -1199,11 +1453,9 @@ function App() {
                 playerReward,
               ]
             : previous.collection,
-
         daily: {
           lastClaim:
             today,
-
           streak:
             newStreak,
         },
@@ -1224,18 +1476,15 @@ function App() {
       showNotice(
         "Transfer listesini yenilemek için 100 Coin gerekiyor."
       );
-
       return;
     }
 
     setGame(
       (previous) => ({
         ...previous,
-
         coins:
           previous.coins -
           100,
-
         market:
           generateMarketPlayers(
             6,
@@ -1270,29 +1519,23 @@ function App() {
       showNotice(
         "Bu futbolcu için yeterli Coin yok."
       );
-
       return;
     }
 
     setGame(
       (previous) => ({
         ...previous,
-
         coins:
           previous.coins -
           player.price,
-
         collection: [
           ...previous.collection,
-
           {
             ...player,
-
             price:
               undefined,
           },
         ],
-
         market:
           previous.market.filter(
             (item) =>
@@ -1307,6 +1550,80 @@ function App() {
     );
   }
 
+  function sellOwnedPlayer(
+    playerId
+  ) {
+    const player =
+      game.collection.find(
+        (item) =>
+          item.id ===
+          playerId
+      );
+
+    if (!player) {
+      return;
+    }
+
+    if (
+      game.training
+        ?.playerId ===
+      playerId
+    ) {
+      showNotice(
+        "Antrenmanda olan oyuncuyu satamazsın. Önce antrenmanın bitmesini bekle."
+      );
+      return;
+    }
+
+    const sellPrice =
+      calculateSellPrice(
+        player
+      );
+
+    const confirmed =
+      window.confirm(
+        `${player.name} (${player.overall} GEN) ${sellPrice.toLocaleString()} Coin karşılığında satılsın mı?`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+        coins:
+          previous.coins +
+          sellPrice,
+        collection:
+          previous.collection.filter(
+            (item) =>
+              item.id !==
+              playerId
+          ),
+        squad:
+          previous.squad.filter(
+            (id) =>
+              id !==
+              playerId
+          ),
+      })
+    );
+
+    if (
+      trainingPlayerId ===
+      playerId
+    ) {
+      setTrainingPlayerId(
+        null
+      );
+    }
+
+    showNotice(
+      `${player.name} satıldı. +${sellPrice.toLocaleString()} Coin`
+    );
+  }
+
   function createMyPlayer() {
     const name =
       customName.trim();
@@ -1315,7 +1632,6 @@ function App() {
       showNotice(
         "Oyuncunun adını yaz."
       );
-
       return;
     }
 
@@ -1325,7 +1641,6 @@ function App() {
       showNotice(
         "Kendi futbolcunu oluşturmak için 750 Coin gerekiyor."
       );
-
       return;
     }
 
@@ -1338,14 +1653,11 @@ function App() {
     setGame(
       (previous) => ({
         ...previous,
-
         coins:
           previous.coins -
           750,
-
         collection: [
           ...previous.collection,
-
           player,
         ],
       })
@@ -1365,7 +1677,6 @@ function App() {
       showNotice(
         "Önce antrenman yapacak futbolcuyu seç."
       );
-
       return;
     }
 
@@ -1373,7 +1684,6 @@ function App() {
       showNotice(
         "Şu anda başka bir antrenman devam ediyor."
       );
-
       return;
     }
 
@@ -1385,7 +1695,6 @@ function App() {
       showNotice(
         `${trainingPlayer.name} şu anki ${game.trainingCap} GEN gelişim sınırına ulaştı.`
       );
-
       return;
     }
 
@@ -1402,7 +1711,6 @@ function App() {
       showNotice(
         "Bu antrenman için yeterli Coin yok."
       );
-
       return;
     }
 
@@ -1419,25 +1727,18 @@ function App() {
     setGame(
       (previous) => ({
         ...previous,
-
         coins:
           previous.coins -
           cost,
-
         training: {
           playerId:
             trainingPlayer.id,
-
           playerName:
             trainingPlayer.name,
-
           startedAt,
-
           endsAt,
-
           gain:
             plan.gain,
-
           planName:
             plan.title,
         },
@@ -1447,6 +1748,172 @@ function App() {
     showNotice(
       `${trainingPlayer.name}: ${plan.title} başladı.`
     );
+  }
+
+  function speedUpTraining() {
+    if (!game.training) {
+      showNotice(
+        "Devam eden bir antrenman yok."
+      );
+      return;
+    }
+
+    const cost =
+      calculateSpeedUpCost(
+        game.training,
+        Date.now()
+      );
+
+    if (
+      cost <= 0
+    ) {
+      return;
+    }
+
+    if (
+      game.coins < cost
+    ) {
+      showNotice(
+        `Antrenmanı hemen bitirmek için ${cost.toLocaleString()} Coin gerekiyor.`
+      );
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Antrenmanı ${cost.toLocaleString()} Coin ödeyerek hemen tamamlamak istiyor musun?`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+        coins:
+          previous.coins -
+          cost,
+        training: {
+          ...previous.training,
+          endsAt:
+            Date.now() - 1,
+        },
+      })
+    );
+
+    setNow(
+      Date.now()
+    );
+  }
+
+  function redeemCoupon() {
+    const code =
+      couponInput
+        .trim()
+        .toLowerCase();
+
+    if (!code) {
+      showNotice(
+        "Kupon kodunu yaz."
+      );
+      return;
+    }
+
+    if (
+      code !== "samsun"
+    ) {
+      showNotice(
+        "Geçersiz kupon kodu."
+      );
+      return;
+    }
+
+    if (
+      game.redeemedCoupons.includes(
+        "samsun"
+      )
+    ) {
+      showNotice(
+        "SAMSUN kuponu bu kayıtta zaten kullanıldı."
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+        coins:
+          previous.coins +
+          100000,
+        redeemedCoupons: [
+          ...previous.redeemedCoupons,
+          "samsun",
+        ],
+      })
+    );
+
+    setCouponInput("");
+
+    showNotice(
+      "Kupon kabul edildi: +100.000 Coin"
+    );
+  }
+
+  function buyCoinPackage(
+    pack
+  ) {
+    if (
+      STORE_TEST_MODE
+    ) {
+      const confirmed =
+        window.confirm(
+          `TEST ÖDEME: ${pack.price} karşılığında ${pack.coins.toLocaleString()} Coin eklensin mi? Gerçek ücret alınmaz.`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setGame(
+        (previous) => ({
+          ...previous,
+          coins:
+            previous.coins +
+            pack.coins,
+          storePurchases: [
+            ...previous.storePurchases,
+            {
+              id: `${pack.id}-${Date.now()}`,
+              packageId:
+                pack.id,
+              coins:
+                pack.coins,
+              price:
+                pack.price,
+              mode: "test",
+              purchasedAt:
+                Date.now(),
+            },
+          ],
+        })
+      );
+
+      showNotice(
+        `[TEST] +${pack.coins.toLocaleString()} Coin eklendi.`
+      );
+      return;
+    }
+
+    if (!pack.paymentUrl) {
+      showNotice(
+        "Canlı ödeme bağlantısı henüz eklenmedi."
+      );
+      return;
+    }
+
+    window.location.href =
+      pack.paymentUrl;
   }
 
   function eventOpponentStrength(
@@ -1475,7 +1942,6 @@ function App() {
         Math.min(
           game.career
             .leagueIndex,
-
           careerLeagues.length -
             1
         )
@@ -1535,32 +2001,19 @@ function App() {
 
     return {
       mode,
-
       eventId,
-
       leagueIndex,
-
-      phase:
-        "playing",
-
+      phase: "playing",
       match,
-
       round: 0,
-
       playerScore: 0,
-
       opponentScore: 0,
-
       playerDeck: [
         ...squadPlayers,
       ],
-
       opponentDeck,
-
       playerHand,
-
       opponentHand,
-
       playerReserve:
         squadPlayers.filter(
           (player) =>
@@ -1568,7 +2021,6 @@ function App() {
               player.id
             )
         ),
-
       opponentReserve:
         opponentDeck.filter(
           (player) =>
@@ -1576,17 +2028,11 @@ function App() {
               player.id
             )
         ),
-
       usedPlayerIds: [],
-
       history: [],
-
       reveal: null,
-
       suddenChoices: [],
-
       suddenOpponent: null,
-
       result: null,
     };
   }
@@ -1619,7 +2065,6 @@ function App() {
       showNotice(
         "Bu etkinlik henüz kilitli."
       );
-
       return;
     }
 
@@ -1629,7 +2074,6 @@ function App() {
       showNotice(
         `${event.name} tamamlandı.`
       );
-
       return;
     }
 
@@ -1640,19 +2084,15 @@ function App() {
       showNotice(
         "Maça girmek için destende tam 10 kart olmalı."
       );
-
       return;
     }
 
     setBattle(
       buildBattle({
         mode: "event",
-
         eventId,
-
         match:
           eventState.match,
-
         target:
           eventOpponentStrength(
             event,
@@ -1676,7 +2116,6 @@ function App() {
       showNotice(
         "Kariyer liglerinin tamamını bitirdin."
       );
-
       return;
     }
 
@@ -1687,21 +2126,17 @@ function App() {
       showNotice(
         "Kariyer maçına girmek için destende tam 10 kart olmalı."
       );
-
       return;
     }
 
     setBattle(
       buildBattle({
         mode: "career",
-
         match:
           game.career
             .match,
-
         target:
           careerOpponentStrength(),
-
         leagueIndex:
           game.career
             .leagueIndex,
@@ -1759,47 +2194,35 @@ function App() {
     setBattle(
       (previous) => ({
         ...previous,
-
         playerScore:
           previous.playerScore +
           (result === "win"
             ? 1
             : 0),
-
         opponentScore:
           previous.opponentScore +
           (result === "loss"
             ? 1
             : 0),
-
         usedPlayerIds: [
           ...previous.usedPlayerIds,
-
           player.id,
         ],
-
         reveal: {
           player,
-
           opponent:
             opponentCard,
-
           result,
         },
-
         history: [
           ...previous.history,
-
           {
             round:
               previous.round +
               1,
-
             player,
-
             opponent:
               opponentCard,
-
             result,
           },
         ],
@@ -1821,15 +2244,12 @@ function App() {
       setBattle(
         (previous) => ({
           ...previous,
-
           round:
             previous.round +
             1,
-
           reveal: null,
         })
       );
-
       return;
     }
 
@@ -1838,14 +2258,12 @@ function App() {
       battle.opponentScore
     ) {
       startSuddenDeath();
-
       return;
     }
 
     finishBattle(
       battle.playerScore >
         battle.opponentScore,
-
       false
     );
   }
@@ -1854,16 +2272,12 @@ function App() {
     setBattle(
       (previous) => ({
         ...previous,
-
         phase: "sudden",
-
         reveal: null,
-
         suddenChoices:
           shuffle(
             previous.playerReserve
           ).slice(0, 2),
-
         suddenOpponent:
           randomItem(
             previous.opponentReserve
@@ -1922,21 +2336,16 @@ function App() {
     setBattle(
       (previous) => ({
         ...previous,
-
         reveal: {
           player,
-
           opponent,
-
           result:
             won
               ? "win"
               : "loss",
         },
-
         result: {
           sudden: true,
-
           won,
         },
       })
@@ -1952,7 +2361,6 @@ function App() {
 
     finishBattle(
       battle.result.won,
-
       true
     );
   }
@@ -1983,11 +2391,9 @@ function App() {
     ) {
       return {
         ...previous.career,
-
         wins:
           previous.career
             .wins + 1,
-
         completed: true,
       };
     }
@@ -1995,14 +2401,11 @@ function App() {
     if (lastMatch) {
       return {
         ...previous.career,
-
         leagueIndex:
           previous.career
             .leagueIndex +
           1,
-
         match: 1,
-
         wins:
           previous.career
             .wins + 1,
@@ -2011,11 +2414,9 @@ function App() {
 
     return {
       ...previous.career,
-
       match:
         previous.career
           .match + 1,
-
       wins:
         previous.career
           .wins + 1,
@@ -2053,24 +2454,18 @@ function App() {
         setBattle(
           (previous) => ({
             ...previous,
-
             phase:
               "finished",
-
             result: {
               won: false,
-
               sudden,
-
               currencyReward:
                 0,
-
               rewardPlayer:
                 null,
             },
           })
         );
-
         return;
       }
 
@@ -2084,10 +2479,8 @@ function App() {
           ? generatePlayer(
               Math.min(
                 event.max,
-
                 Math.max(
                   event.min,
-
                   event.min +
                     Math.floor(
                       (match /
@@ -2098,13 +2491,10 @@ function App() {
                     1
                 )
               ),
-
               Math.min(
                 event.max,
-
                 Math.max(
                   event.min,
-
                   event.min +
                     Math.floor(
                       (match /
@@ -2131,49 +2521,38 @@ function App() {
 
           return {
             ...previous,
-
             collection:
               rewardPlayer
                 ? [
                     ...previous.collection,
-
                     rewardPlayer,
                   ]
                 : previous.collection,
-
             trainingCap:
               finalMatch
                 ? Math.max(
                     previous.trainingCap,
-
                     event.unlockCap
                   )
                 : previous.trainingCap,
-
             marketCap:
               finalMatch
                 ? Math.max(
                     previous.marketCap,
-
                     event.unlockCap
                   )
                 : previous.marketCap,
-
             events: {
               ...previous.events,
-
               [event.id]: {
                 ...current,
-
                 currency:
                   current.currency +
                   currencyReward,
-
                 match:
                   finalMatch
                     ? event.matches
                     : match + 1,
-
                 completed:
                   finalMatch,
               },
@@ -2185,19 +2564,13 @@ function App() {
       setBattle(
         (previous) => ({
           ...previous,
-
           phase:
             "finished",
-
           result: {
             won: true,
-
             sudden,
-
             currencyReward,
-
             rewardPlayer,
-
             eventCompleted:
               finalMatch,
           },
@@ -2215,21 +2588,16 @@ function App() {
         setBattle(
           (previous) => ({
             ...previous,
-
             phase:
               "loss-select",
-
             result: {
               won: false,
-
               sudden,
-
               lostPlayer:
                 null,
             },
           })
         );
-
         return;
       }
 
@@ -2249,21 +2617,16 @@ function App() {
       setGame(
         (previous) => ({
           ...previous,
-
           coins:
             previous.coins +
             coinReward,
-
           trophies:
             previous.trophies +
             1,
-
           collection: [
             ...previous.collection,
-
             rewardPlayer,
           ],
-
           career:
             advanceCareer(
               previous
@@ -2274,17 +2637,12 @@ function App() {
       setBattle(
         (previous) => ({
           ...previous,
-
           phase:
             "finished",
-
           result: {
             won: true,
-
             sudden,
-
             rewardPlayer,
-
             coinReward,
           },
         })
@@ -2308,21 +2666,18 @@ function App() {
     setGame(
       (previous) => ({
         ...previous,
-
         collection:
           previous.collection.filter(
             (item) =>
               item.id !==
               player.id
           ),
-
         squad:
           previous.squad.filter(
             (id) =>
               id !==
               player.id
           ),
-
         training:
           previous.training
             ?.playerId ===
@@ -2335,13 +2690,10 @@ function App() {
     setBattle(
       (previous) => ({
         ...previous,
-
         phase:
           "finished",
-
         result: {
           ...previous.result,
-
           lostPlayer:
             player,
         },
@@ -2359,7 +2711,6 @@ function App() {
         "battle"
     ) {
       window.history.back();
-
       return;
     }
 
@@ -2398,39 +2749,31 @@ function App() {
       showNotice(
         `Yeterli ${event.currencyName} yok.`
       );
-
       return;
     }
 
     setGame(
       (previous) => ({
         ...previous,
-
         collection: [
           ...previous.collection,
-
           {
             ...player,
-
             eventPrice:
               undefined,
           },
         ],
-
         events: {
           ...previous.events,
-
           [eventId]: {
             ...previous.events[
               eventId
             ],
-
             currency:
               previous.events[
                 eventId
               ].currency -
               player.eventPrice,
-
             shop:
               previous.events[
                 eventId
@@ -2495,9 +2838,7 @@ function App() {
           <div className="currency">
             🏆{" "}
             <b>
-              {
-                game.trophies
-              }
+              {game.trophies}
             </b>
           </div>
 
@@ -2561,11 +2902,8 @@ function App() {
       <div className="battle-score">
         <div>
           <span>SEN</span>
-
           <strong>
-            {
-              currentBattle.playerScore
-            }
+            {currentBattle.playerScore}
           </strong>
         </div>
 
@@ -2573,11 +2911,8 @@ function App() {
 
         <div>
           <span>RAKİP</span>
-
           <strong>
-            {
-              currentBattle.opponentScore
-            }
+            {currentBattle.opponentScore}
           </strong>
         </div>
       </div>
@@ -2604,19 +2939,11 @@ function App() {
 
         <div className="versus-result">
           <strong>
-            {
-              reveal.player
-                .overall
-            }
+            {reveal.player.overall}
           </strong>
-
           <span>VS</span>
-
           <strong>
-            {
-              reveal.opponent
-                .overall
-            }
+            {reveal.opponent.overall}
           </strong>
         </div>
 
@@ -2741,15 +3068,9 @@ function App() {
           </h1>
 
           <div className="final-score">
-            {
-              battle.playerScore
-            }
-
+            {battle.playerScore}
             <span>-</span>
-
-            {
-              battle.opponentScore
-            }
+            {battle.opponentScore}
           </div>
 
           {battle.result
@@ -2765,25 +3086,17 @@ function App() {
               .won && (
               <>
                 <div className="reward-banner">
-                  {
-                    event.currencyIcon
-                  }{" "}
+                  {event.currencyIcon}{" "}
                   +
-                  {
-                    battle.result
-                      .currencyReward
-                  }{" "}
-                  {
-                    event.currencyName
-                  }
+                  {battle.result.currencyReward}{" "}
+                  {event.currencyName}
                 </div>
 
                 {battle.result
                   .rewardPlayer && (
                   <div className="reward-player">
                     <div className="section-label">
-                      FUTBOLCU
-                      ÖDÜLÜ
+                      FUTBOLCU ÖDÜLÜ
                     </div>
 
                     <PlayerCard
@@ -2798,12 +3111,8 @@ function App() {
                 {battle.result
                   .eventCompleted && (
                   <div className="unlock-banner">
-                    ETKİNLİK
-                    TAMAMLANDI •
-                    GELİŞİM SINIRI{" "}
-                    {
-                      event.unlockCap
-                    }{" "}
+                    ETKİNLİK TAMAMLANDI • GELİŞİM SINIRI{" "}
+                    {event.unlockCap}{" "}
                     GEN
                   </div>
                 )}
@@ -2829,17 +3138,13 @@ function App() {
               <>
                 <div className="reward-banner">
                   🪙 +
-                  {
-                    battle.result
-                      .coinReward
-                  }{" "}
+                  {battle.result.coinReward}{" "}
                   COIN
                 </div>
 
                 <div className="reward-player">
                   <div className="section-label">
-                    RAKİPTEN
-                    KAZANDIĞIN KART
+                    RAKİPTEN KAZANDIĞIN KART
                   </div>
 
                   <PlayerCard
@@ -2860,8 +3165,7 @@ function App() {
               .lostPlayer && (
               <div className="reward-player lost-player">
                 <div className="section-label">
-                  RAKİBE GİDEN
-                  KART
+                  RAKİBE GİDEN KART
                 </div>
 
                 <PlayerCard
@@ -2925,9 +3229,7 @@ function App() {
                       key={
                         player.id
                       }
-                      player={
-                        player
-                      }
+                      player={player}
                       compact
                       onClick={() =>
                         playSuddenCard(
@@ -2986,8 +3288,7 @@ function App() {
 
             <h1>
               RAUND{" "}
-              {battle.round +
-                1}
+              {battle.round + 1}
               /5
             </h1>
           </div>
@@ -3020,7 +3321,6 @@ function App() {
             <div className="battle-message">
               Rakip kartını
               attı.{" "}
-
               <strong>
                 Şimdi kartını
                 seç.
@@ -3034,9 +3334,7 @@ function App() {
                     key={
                       player.id
                     }
-                    player={
-                      player
-                    }
+                    player={player}
                     compact
                     onClick={() =>
                       playBattleCard(
@@ -3108,15 +3406,9 @@ function App() {
                 >
                   R{round.round}
                   {" • "}
-                  {
-                    round.player
-                      .overall
-                  }
+                  {round.player.overall}
                   -
-                  {
-                    round.opponent
-                      .overall
-                  }
+                  {round.opponent.overall}
                   {" • "}
                   {round.result ===
                   "win"
@@ -3157,7 +3449,6 @@ function App() {
 
           <h1 className="game-logo-title">
             SOCCER{" "}
-
             <span>
               CARDS WAR
             </span>
@@ -3231,9 +3522,7 @@ function App() {
           <button
             type="button"
             className="primary-wide-button"
-            onClick={
-              createClub
-            }
+            onClick={createClub}
           >
             KULÜBÜ OLUŞTUR
           </button>
@@ -3261,10 +3550,7 @@ function App() {
           />
 
           <div className="squad-counter">
-            {
-              game.squad
-                .length
-            }
+            {game.squad.length}
             /10
           </div>
 
@@ -3282,9 +3568,7 @@ function App() {
                     key={
                       player.id
                     }
-                    player={
-                      player
-                    }
+                    player={player}
                     selected={
                       game.squad.includes(
                         player.id
@@ -3339,9 +3623,7 @@ function App() {
                     key={
                       player.id
                     }
-                    player={
-                      player
-                    }
+                    player={player}
                     selected={
                       game.squad.includes(
                         player.id
@@ -3379,7 +3661,7 @@ function App() {
           <PageHeading
             label="GELİŞİM MERKEZİ"
             title="ANTRENMAN"
-            text="Coin harca, gerçek zamanlı çalıştır ve futbolcularını geliştir."
+            text="Coin harca, gerçek zamanlı çalıştır ve futbolcularını geliştir. İstersen kalan süreyi Coin ile anında bitir."
             stat={`${game.trainingCap} MAX`}
           />
 
@@ -3387,22 +3669,15 @@ function App() {
             <div className="training-running">
               <div>
                 <span>
-                  ANTRENMAN DEVAM
-                  EDİYOR
+                  ANTRENMAN DEVAM EDİYOR
                 </span>
 
                 <h2>
-                  {
-                    game.training
-                      .playerName
-                  }
+                  {game.training.playerName}
                 </h2>
 
                 <p>
-                  {
-                    game.training
-                      .planName
-                  }
+                  {game.training.planName}
                 </p>
               </div>
 
@@ -3410,6 +3685,26 @@ function App() {
                 {formatTime(
                   remaining
                 )}
+              </div>
+
+              <div className="training-speed-box">
+                <div className="training-speed-cost">
+                  HIZLANDIRMA: 🪙 {trainingSpeedCost.toLocaleString()}
+                </div>
+
+                <button
+                  type="button"
+                  className="training-speed-button"
+                  disabled={
+                    trainingSpeedCost <=
+                    0
+                  }
+                  onClick={
+                    speedUpTraining
+                  }
+                >
+                  ⚡ HEMEN BİTİR
+                </button>
               </div>
             </div>
           )}
@@ -3432,9 +3727,7 @@ function App() {
                     key={
                       player.id
                     }
-                    player={
-                      player
-                    }
+                    player={player}
                     selected={
                       trainingPlayerId ===
                       player.id
@@ -3459,7 +3752,6 @@ function App() {
                 const cost =
                   calculateTrainingCost(
                     plan,
-
                     trainingPlayer
                       ?.overall ||
                       15
@@ -3479,22 +3771,15 @@ function App() {
                     }
                   >
                     <span>
-                      {
-                        plan.duration
-                      }
+                      {plan.duration}
                     </span>
 
                     <h3>
-                      {
-                        plan.title
-                      }
+                      {plan.title}
                     </h3>
 
                     <strong>
-                      +
-                      {
-                        plan.gain
-                      }{" "}
+                      +{plan.gain}{" "}
                       GEN
                     </strong>
 
@@ -3529,20 +3814,18 @@ function App() {
           <PageHeading
             label="KULÜP YÖNETİMİ"
             title="TRANSFERLER"
-            text="GEN yükseldikçe fiyat yükselir. İlerledikçe pazarda daha güçlü kartlar açılır."
+            text="GEN yükseldikçe fiyat yükselir. Artık kendi oyuncularını da satabilirsin."
             stat={`MAX ${game.marketCap}`}
           />
 
           <div className="custom-player-box">
             <div>
               <div className="section-label">
-                KENDİ YILDIZINI
-                YARAT
+                KENDİ YILDIZINI YARAT
               </div>
 
               <h2>
-                FUTBOLCU
-                OLUŞTUR
+                FUTBOLCU OLUŞTUR
               </h2>
 
               <p>
@@ -3589,9 +3872,7 @@ function App() {
                         position
                       }
                     >
-                      {
-                        position
-                      }
+                      {position}
                     </option>
                   )
                 )}
@@ -3604,8 +3885,7 @@ function App() {
                   createMyPlayer
                 }
               >
-                OLUŞTUR • 🪙
-                750
+                OLUŞTUR • 🪙 750
               </button>
             </div>
           </div>
@@ -3646,6 +3926,214 @@ function App() {
               )
             )}
           </div>
+
+          <section className="sell-section">
+            <div className="section-label">
+              KULÜBÜMDEKİ OYUNCULAR
+            </div>
+
+            <h2 className="screen-subtitle">
+              OYUNCU SAT
+            </h2>
+
+            <p className="result-copy">
+              Oyuncular güncel piyasa değerinin %60'ına satılır. Satılan oyuncu takımdaysa otomatik olarak desteden de çıkar.
+            </p>
+
+            <div className="sell-grid">
+              {game.collection
+                .slice()
+                .sort(
+                  (a, b) =>
+                    b.overall -
+                    a.overall
+                )
+                .map(
+                  (player) => {
+                    const sellPrice =
+                      calculateSellPrice(
+                        player
+                      );
+
+                    const isTraining =
+                      game.training
+                        ?.playerId ===
+                      player.id;
+
+                    return (
+                      <div
+                        className="sell-player-box"
+                        key={
+                          player.id
+                        }
+                      >
+                        <PlayerCard
+                          player={player}
+                          compact
+                          selected={
+                            game.squad.includes(
+                              player.id
+                            )
+                          }
+                        />
+
+                        <button
+                          type="button"
+                          className="sell-button"
+                          disabled={
+                            isTraining
+                          }
+                          onClick={() =>
+                            sellOwnedPlayer(
+                              player.id
+                            )
+                          }
+                        >
+                          {isTraining
+                            ? "ANTRENMANDA"
+                            : `SAT • 🪙 ${sellPrice.toLocaleString()}`}
+                        </button>
+                      </div>
+                    );
+                  }
+                )}
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (
+    screen === "store"
+  ) {
+    const couponUsed =
+      game.redeemedCoupons.includes(
+        "samsun"
+      );
+
+    return (
+      <div className="game-screen">
+        <TopBar />
+        <Notice />
+
+        <main className="page-content">
+          <BackButton
+            onClick={goHome}
+          />
+
+          <PageHeading
+            label="SCW STORE"
+            title="MAĞAZA"
+            text="Coin paketleri, kupon kodları ve test satın alımları burada."
+            stat={`🪙 ${game.coins.toLocaleString()}`}
+          />
+
+          <div className="store-test-banner">
+            <strong>
+              {STORE_TEST_MODE
+                ? "🧪 TEST ÖDEME MODU"
+                : "💳 CANLI ÖDEME"}
+            </strong>
+
+            <span>
+              {STORE_TEST_MODE
+                ? "Butonlar gerçek ücret çekmeden Coin ekler."
+                : "Ödemeler güvenli ödeme sağlayıcısına yönlendirilir."}
+            </span>
+          </div>
+
+          <div className="coupon-box">
+            <div className="coupon-copy">
+              <div className="section-label">
+                KUPON KODU
+              </div>
+
+              <h2>
+                PROMOSYON
+              </h2>
+
+              <p>
+                Test kuponu bu kayıt için yalnızca bir kez kullanılabilir.
+              </p>
+            </div>
+
+            <input
+              value={
+                couponInput
+              }
+              onChange={(event) =>
+                setCouponInput(
+                  event.target.value
+                )
+              }
+              placeholder="Kupon kodu"
+              autoCapitalize="none"
+              disabled={couponUsed}
+            />
+
+            <button
+              type="button"
+              className="primary-button"
+              onClick={
+                redeemCoupon
+              }
+              disabled={couponUsed}
+            >
+              {couponUsed
+                ? "KULLANILDI"
+                : "KULLAN"}
+            </button>
+          </div>
+
+          <div className="section-label">
+            COIN PAKETLERİ
+          </div>
+
+          <h2 className="screen-subtitle">
+            OYUN PARASI SATIN AL
+          </h2>
+
+          <div className="coin-pack-grid">
+            {COIN_PACKAGES.map(
+              (pack) => (
+                <div
+                  key={pack.id}
+                  className="coin-pack-card"
+                >
+                  <div className="coin-pack-icon">
+                    🪙
+                  </div>
+
+                  <h3>
+                    {pack.coins.toLocaleString()}
+                  </h3>
+
+                  <p>
+                    SCW COIN
+                  </p>
+
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() =>
+                      buyCoinPackage(
+                        pack
+                      )
+                    }
+                  >
+                    {STORE_TEST_MODE
+                      ? `TEST • ${pack.price}`
+                      : `SATIN AL • ${pack.price}`}
+                  </button>
+                </div>
+              )
+            )}
+          </div>
+
+          <div className="store-security-note">
+            Canlı gerçek para ödemesinde Coin'i yalnızca tarayıcıdaki butona basıldığı için eklemek güvenli değildir. Canlı sürümde ödeme sağlayıcısının doğruladığı başarılı ödeme sonrası Coin verilmelidir. Bu yüzden bu build test modundadır.
+          </div>
         </main>
       </div>
     );
@@ -3667,7 +4155,6 @@ function App() {
     const opponentStrength =
       eventOpponentStrength(
         activeEvent,
-
         activeEventState
       );
 
@@ -3736,16 +4223,12 @@ function App() {
                     }
                   >
                     <span>
-                      {
-                        event.icon
-                      }
+                      {event.icon}
                     </span>
 
                     <div>
                       <b>
-                        {
-                          event.name
-                        }
+                        {event.name}
                       </b>
 
                       <small>
@@ -3772,40 +4255,27 @@ function App() {
             <div>
               <div className="section-label">
                 ETKİNLİK{" "}
-                {activeEventIndex +
-                  1}
+                {activeEventIndex + 1}
               </div>
 
               <h1>
-                {
-                  activeEvent.icon
-                }{" "}
-                {
-                  activeEvent.name
-                }
+                {activeEvent.icon}{" "}
+                {activeEvent.name}
               </h1>
 
               <p>
-                {
-                  activeEvent.matches
-                }{" "}
+                {activeEvent.matches}{" "}
                 maç •{" "}
-                {
-                  activeEvent.min
-                }
+                {activeEvent.min}
                 –
-                {
-                  activeEvent.max
-                }{" "}
+                {activeEvent.max}{" "}
                 GEN • Kart kaybı
                 yok.
               </p>
             </div>
 
             <div className="event-currency">
-              {
-                activeEvent.currencyIcon
-              }{" "}
+              {activeEvent.currencyIcon}{" "}
               {activeEventState.currency.toLocaleString()}
             </div>
           </section>
@@ -3815,38 +4285,25 @@ function App() {
               <span>
                 İLERLEME
               </span>
-
               <strong>
-                {
-                  activeEventState.match
-                }
+                {activeEventState.match}
                 /
-                {
-                  activeEvent.matches
-                }
+                {activeEvent.matches}
               </strong>
             </div>
 
             <div>
               <span>RAKİP</span>
-
               <strong>
-                ~
-                {
-                  opponentStrength
-                }{" "}
+                ~{opponentStrength}{" "}
                 GEN
               </strong>
             </div>
 
             <div>
               <span>DESTE</span>
-
               <strong>
-                {
-                  game.squad
-                    .length
-                }
+                {game.squad.length}
                 /10
               </strong>
             </div>
@@ -3877,7 +4334,6 @@ function App() {
               <div className="section-label">
                 ETKİNLİK MAĞAZASI
               </div>
-
               <h2>
                 {activeEvent.name.toUpperCase()}{" "}
                 PAZARI
@@ -3885,9 +4341,7 @@ function App() {
             </div>
 
             <div className="event-currency small">
-              {
-                activeEvent.currencyIcon
-              }{" "}
+              {activeEvent.currencyIcon}{" "}
               {activeEventState.currency.toLocaleString()}
             </div>
           </div>
@@ -3909,7 +4363,6 @@ function App() {
                   onClick={() =>
                     buyEventPlayer(
                       activeEvent.id,
-
                       player.id
                     )
                   }
@@ -3939,7 +4392,6 @@ function App() {
       Math.min(
         game.career
           .leagueIndex,
-
         careerLeagues.length -
           1
       );
@@ -3987,47 +4439,33 @@ function App() {
             </div>
 
             <div className="risk-badge">
-              ⚠️ KART KAYBI
-              AÇIK
+              ⚠️ KART KAYBI AÇIK
             </div>
           </section>
 
           <div className="career-stats">
             <div>
               <span>LİG</span>
-
               <strong>
                 {leagueIndex + 1}
                 /
-                {
-                  careerLeagues.length
-                }
+                {careerLeagues.length}
               </strong>
             </div>
 
             <div>
               <span>MAÇ</span>
-
               <strong>
-                {
-                  game.career
-                    .match
-                }
+                {game.career.match}
                 /
-                {
-                  league.matches
-                }
+                {league.matches}
               </strong>
             </div>
 
             <div>
               <span>RAKİP</span>
-
               <strong>
-                ~
-                {
-                  opponentStrength
-                }
+                ~{opponentStrength}
               </strong>
             </div>
 
@@ -4035,12 +4473,8 @@ function App() {
               <span>
                 GALİBİYET
               </span>
-
               <strong>
-                {
-                  game.career
-                    .wins
-                }
+                {game.career.wins}
               </strong>
             </div>
           </div>
@@ -4065,7 +4499,6 @@ function App() {
             <div className="section-label">
               KARİYER YOLU
             </div>
-
             <h2>LİGLER</h2>
           </div>
 
@@ -4111,18 +4544,14 @@ function App() {
                     </span>
 
                     <h3>
-                      {
-                        item.name
-                      }
+                      {item.name}
                     </h3>
 
                     <p>
                       {item.min}–
                       {item.max} GEN
                       •{" "}
-                      {
-                        item.matches
-                      }{" "}
+                      {item.matches}{" "}
                       maç
                     </p>
                   </div>
@@ -4164,7 +4593,6 @@ function App() {
             <strong>
               {teamOverall}
             </strong>
-
             <span>
               DESTE GEN
             </span>
@@ -4172,13 +4600,9 @@ function App() {
 
           <div>
             <strong>
-              {
-                game.squad
-                  .length
-              }
+              {game.squad.length}
               /10
             </strong>
-
             <span>
               MAÇ DESTESİ
             </span>
@@ -4186,22 +4610,15 @@ function App() {
 
           <div>
             <strong>
-              {
-                game.collection
-                  .length
-              }
+              {game.collection.length}
             </strong>
-
             <span>KART</span>
           </div>
 
           <div>
             <strong>
-              {
-                game.trainingCap
-              }
+              {game.trainingCap}
             </strong>
-
             <span>
               GELİŞİM MAX
             </span>
@@ -4271,6 +4688,17 @@ function App() {
             onClick={() =>
               openScreen(
                 "transfers"
+              )
+            }
+          />
+
+          <MenuCard
+            icon="🛒"
+            label="COIN & KUPON"
+            title="MAĞAZA"
+            onClick={() =>
+              openScreen(
+                "store"
               )
             }
           />
