@@ -1,5 +1,7 @@
 import {
   calculateFullTrainingPlan,
+  careerLeagues,
+  eventConfigs,
   getPositionGroup,
   positionGroups,
   squadRequirements,
@@ -15,8 +17,60 @@ export const MAX_NORMAL_OVERALL = 99;
 
 export const EL_TURCO_OVERALL = 100;
 
+/* =========================================================
+   AŞAMA SINIRLARI
+========================================================= */
+
+export function getStageCap(
+  stageNumber = 1
+) {
+  const stage = Math.min(
+    10,
+    Math.max(
+      1,
+      Number(stageNumber) || 1
+    )
+  );
+
+  const league =
+    careerLeagues.find(
+      (item) =>
+        Number(item.stage) ===
+        stage
+    );
+
+  return Number(
+    league?.playCap ||
+      league?.max ||
+      30
+  );
+}
+
+export function getEventStageCap(
+  eventId
+) {
+  const event =
+    eventConfigs.find(
+      (item) =>
+        item.id === eventId
+    ) ||
+    eventConfigs[0];
+
+  return Number(
+    event?.playCap ||
+      event?.max ||
+      30
+  );
+}
+
+/* =========================================================
+   OYUNCU DURUMLARI
+========================================================= */
+
 export function isPlayerSold(player) {
-  return Boolean(player?.sold);
+  return Boolean(
+    player?.sold
+  );
 }
 
 export function isPlayerTraining(
@@ -27,10 +81,24 @@ export function isPlayerTraining(
     return false;
   }
 
-  return (
-    game.training?.playerId ===
+  if (
+    game.training
+      ?.playerId ===
     player.id
-  );
+  ) {
+    return true;
+  }
+
+  if (
+    Number(
+      player.trainingUntil ||
+        0
+    ) > Date.now()
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export function isPlayerRented(
@@ -41,14 +109,26 @@ export function isPlayerRented(
     return false;
   }
 
+  if (
+    Number(
+      player.rentedUntil ||
+        0
+    ) > Date.now()
+  ) {
+    return true;
+  }
+
   return Boolean(
-    game.rentalCenter?.rentals?.some(
-      (rental) =>
-        rental.playerId ===
-          player.id &&
-        rental.endsAt >
-          Date.now()
-    )
+    game.rentalCenter
+      ?.rentals
+      ?.some(
+        (rental) =>
+          rental.playerId ===
+            player.id &&
+          !rental.finished &&
+          rental.endsAt >
+            Date.now()
+      )
   );
 }
 
@@ -61,14 +141,17 @@ export function isPlayerWithCoach(
   }
 
   return Boolean(
-    game.coaches?.activeSessions?.some(
-      (session) =>
-        session.playerIds?.includes(
-          player.id
-        ) &&
-        session.endsAt >
-          Date.now()
-    )
+    game.coaches
+      ?.activeSessions
+      ?.some(
+        (session) =>
+          session.playerIds
+            ?.includes(
+              player.id
+            ) &&
+          session.endsAt >
+            Date.now()
+      )
   );
 }
 
@@ -125,6 +208,10 @@ export function isPlayerUsable(
   return true;
 }
 
+/* =========================================================
+   AKTİF OYUNCULAR
+========================================================= */
+
 export function getActivePlayers(
   game,
   stageCap = 99
@@ -147,8 +234,12 @@ export function getActivePlayers(
   );
 }
 
+/* =========================================================
+   POZİSYON SAYILARI
+========================================================= */
+
 export function countGroups(
-  players
+  players = []
 ) {
   const counts = {
     goalkeeper: 0,
@@ -158,35 +249,37 @@ export function countGroups(
     total: 0,
   };
 
-  players.forEach((player) => {
-    if (
-      !player ||
-      player.sold
-    ) {
-      return;
+  players.forEach(
+    (player) => {
+      if (
+        !player ||
+        player.sold
+      ) {
+        return;
+      }
+
+      const group =
+        player.positionGroup ||
+        getPositionGroup(
+          player.position
+        );
+
+      if (
+        counts[group] !==
+        undefined
+      ) {
+        counts[group] += 1;
+      }
+
+      counts.total += 1;
     }
-
-    const group =
-      player.positionGroup ||
-      getPositionGroup(
-        player.position
-      );
-
-    if (
-      counts[group] !==
-      undefined
-    ) {
-      counts[group] += 1;
-    }
-
-    counts.total += 1;
-  });
+  );
 
   return counts;
 }
 
 export function getSquadProblems(
-  players
+  players = []
 ) {
   const counts =
     countGroups(players);
@@ -198,8 +291,7 @@ export function getSquadProblems(
   ).forEach(
     ([group, minimum]) => {
       if (
-        group ===
-          "total" ||
+        group === "total" ||
         group ===
           "careerMinimumActivePlayers"
       ) {
@@ -212,13 +304,16 @@ export function getSquadProblems(
       ) {
         problems.push({
           group,
+
           name:
             positionGroups[
               group
             ]?.name ||
             group,
+
           current:
             counts[group],
+
           required:
             minimum,
         });
@@ -248,6 +343,195 @@ export function getSquadProblems(
   };
 }
 
+/* =========================================================
+   AKTİF 10 KİŞİLİK KADRO
+========================================================= */
+
+function addFormationId(
+  target,
+  value
+) {
+  if (!value) {
+    return;
+  }
+
+  if (
+    typeof value ===
+    "string"
+  ) {
+    target.push(value);
+    return;
+  }
+
+  if (
+    typeof value ===
+      "object" &&
+    value.id
+  ) {
+    target.push(
+      value.id
+    );
+  }
+}
+
+export function getActiveFormationIds(
+  game = {}
+) {
+  const ids = [];
+
+  const formation =
+    game.formation ||
+    game.team?.formation ||
+    game.activeFormation ||
+    {};
+
+  if (
+    formation &&
+    typeof formation ===
+      "object"
+  ) {
+    Object.values(
+      formation
+    ).forEach(
+      (value) => {
+        if (
+          Array.isArray(
+            value
+          )
+        ) {
+          value.forEach(
+            (item) =>
+              addFormationId(
+                ids,
+                item
+              )
+          );
+        } else {
+          addFormationId(
+            ids,
+            value
+          );
+        }
+      }
+    );
+  }
+
+  [
+    game.squad,
+    game.activeSquad,
+    game.lineup,
+    game.startingPlayers,
+    game.startingXI,
+    game.team?.squad,
+    game.team?.startingXI,
+  ].forEach(
+    (list) => {
+      if (
+        Array.isArray(
+          list
+        )
+      ) {
+        list.forEach(
+          (item) =>
+            addFormationId(
+              ids,
+              item
+            )
+        );
+      }
+    }
+  );
+
+  return [
+    ...new Set(ids),
+  ].slice(
+    0,
+    squadRequirements.total
+  );
+}
+
+export function isPlayerInActiveFormation(
+  player,
+  game
+) {
+  if (!player) {
+    return false;
+  }
+
+  const playerId =
+    typeof player ===
+    "string"
+      ? player
+      : player.id;
+
+  return getActiveFormationIds(
+    game
+  ).includes(
+    playerId
+  );
+}
+
+export function getActiveFormationPlayers(
+  players = [],
+  game = {}
+) {
+  const ids =
+    getActiveFormationIds(
+      game
+    );
+
+  return ids
+    .map((id) =>
+      players.find(
+        (player) =>
+          player.id === id
+      )
+    )
+    .filter(Boolean);
+}
+
+/* =========================================================
+   KADRO ORTALAMASI
+========================================================= */
+
+export function getSquadAverage(
+  players = [],
+  game = {}
+) {
+  const squad =
+    getActiveFormationPlayers(
+      players,
+      game
+    );
+
+  if (!squad.length) {
+    return 0;
+  }
+
+  const total =
+    squad.reduce(
+      (sum, player) =>
+        sum +
+        Number(
+          player.overall ||
+            0
+        ),
+      0
+    );
+
+  return (
+    Math.round(
+      (total /
+        squad.length) *
+        10
+    ) / 10
+  );
+}
+
+/* =========================================================
+   MAÇ BAŞLATMA
+========================================================= */
+
 export function canStartCareer(
   game,
   stageCap = 99
@@ -270,10 +554,13 @@ export function canStartCareer(
   ) {
     return {
       allowed: false,
+
       message:
-        "Kariyer maçına girmek için en az 11 aktif oyuncuya ihtiyacın var.",
+        `Kariyer maçına girmek için en az ${squadRequirements.careerMinimumActivePlayers} aktif oyuncuya ihtiyacın var.`,
+
       activePlayers:
         active.length,
+
       formation,
     };
   }
@@ -284,13 +571,16 @@ export function canStartCareer(
 
     return {
       allowed: false,
+
       message:
         first?.group ===
         "total"
           ? "Maç oynayabilmek için en az 10 kullanılabilir oyuncuya ihtiyacın var."
           : `Kadron eksik: En az ${first.required} ${first.name} oyuncusu gerekli.`,
+
       activePlayers:
         active.length,
+
       formation,
     };
   }
@@ -325,11 +615,13 @@ export function canStartEvent(
 
     return {
       allowed: false,
+
       message:
         first?.group ===
         "total"
           ? "Etkinlik maçına girmek için 10 kullanılabilir oyuncu gerekli."
           : `Kadron eksik: En az ${first.required} ${first.name} oyuncusu gerekli.`,
+
       formation,
     };
   }
@@ -340,6 +632,10 @@ export function canStartEvent(
     formation,
   };
 }
+
+/* =========================================================
+   OYUNCUYU GEÇİCİ KULLANIMDAN ÇIKARMA KONTROLÜ
+========================================================= */
 
 export function canTemporarilyRemovePlayer(
   game,
@@ -369,6 +665,7 @@ export function canTemporarilyRemovePlayer(
 
     return {
       allowed: false,
+
       message:
         first?.group ===
         "total"
@@ -381,94 +678,6 @@ export function canTemporarilyRemovePlayer(
     allowed: true,
     message: "",
   };
-}
-
-/* =========================================================
-   AKTİF 10 KİŞİLİK KADRO
-========================================================= */
-
-export function getActiveFormationIds(
-  game = {}
-) {
-  const ids = [];
-
-  const add = (value) => {
-    if (!value) {
-      return;
-    }
-
-    if (
-      typeof value ===
-      "string"
-    ) {
-      ids.push(value);
-      return;
-    }
-
-    if (
-      typeof value ===
-        "object" &&
-      value.id
-    ) {
-      ids.push(value.id);
-    }
-  };
-
-  const formation =
-    game.formation ||
-    game.team?.formation ||
-    game.activeFormation ||
-    {};
-
-  Object.values(
-    formation
-  ).forEach((value) => {
-    if (
-      Array.isArray(value)
-    ) {
-      value.forEach(add);
-    } else {
-      add(value);
-    }
-  });
-
-  [
-    game.squad,
-    game.activeSquad,
-    game.lineup,
-    game.startingPlayers,
-    game.startingXI,
-    game.team?.squad,
-    game.team?.startingXI,
-  ].forEach((list) => {
-    if (
-      Array.isArray(list)
-    ) {
-      list.forEach(add);
-    }
-  });
-
-  return [
-    ...new Set(ids),
-  ].slice(
-    0,
-    squadRequirements.total
-  );
-}
-
-export function isPlayerInActiveFormation(
-  player,
-  game
-) {
-  if (!player) {
-    return false;
-  }
-
-  return getActiveFormationIds(
-    game
-  ).includes(
-    player.id
-  );
 }
 
 /* =========================================================
@@ -489,7 +698,9 @@ export function canSellPlayer(
 
   if (
     player.unsellable ||
-    player.specialReward
+    player.specialReward ||
+    player.rarity ===
+      "elturco"
   ) {
     return {
       allowed: false,
@@ -616,10 +827,6 @@ export function canSendToTraining(
   );
 }
 
-/* =========================================================
-   ANTRENÖR
-========================================================= */
-
 export function canSendToCoach(
   game,
   player,
@@ -658,7 +865,8 @@ export function getFullTrainingForPlayer(
       milliseconds: 0,
       cost: 0,
       targetOverall:
-        player?.overall || 0,
+        player?.overall ||
+        0,
     };
   }
 
@@ -698,8 +906,9 @@ export function canRentPlayer(
   }
 
   if (
-    player.unsellable &&
-    player.overall === 100
+    player.unsellable ||
+    player.rarity ===
+      "elturco"
   ) {
     return {
       allowed: false,
@@ -741,7 +950,7 @@ export function canRentPlayer(
 }
 
 /* =========================================================
-   SAAT FORMATLARI
+   SAAT
 ========================================================= */
 
 export function millisecondsToClock(
@@ -751,7 +960,9 @@ export function millisecondsToClock(
     Math.max(
       0,
       Math.floor(
-        milliseconds
+        Number(
+          milliseconds
+        ) || 0
       )
     );
 
@@ -795,7 +1006,9 @@ export function formatPlayTime(
     Math.max(
       0,
       Math.floor(
-        totalSeconds || 0
+        Number(
+          totalSeconds
+        ) || 0
       )
     );
 
@@ -827,7 +1040,10 @@ export function getNextDailyRewardTime(
   const lastClaimAt =
     Number(
       game?.daily
-        ?.lastClaimAt
+        ?.lastClaimAt ||
+        game?.daily
+          ?.lastClaim ||
+        0
     ) || 0;
 
   if (!lastClaimAt) {
@@ -882,8 +1098,9 @@ export function getEventCooldownRemaining(
   const availableAt =
     Number(
       eventState
-        ?.nextMatchAt
-    ) || 0;
+        ?.nextMatchAt ||
+        0
+    );
 
   return Math.max(
     0,
@@ -904,7 +1121,7 @@ export function isEventMatchReady(
 }
 
 /* =========================================================
-   KİRALIK İLERLEMESİ
+   KİRALIK İLERLEME
 ========================================================= */
 
 export function getRentalProgress(
@@ -951,7 +1168,7 @@ export function getRentalProgress(
 }
 
 /* =========================================================
-   ANTRENÖR İLERLEMESİ
+   ANTRENÖR İLERLEME
 ========================================================= */
 
 export function getCoachSessionProgress(
