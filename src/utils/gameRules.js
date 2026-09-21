@@ -1,4 +1,5 @@
 import {
+  calculateFullTrainingPlan,
   getPositionGroup,
   positionGroups,
   squadRequirements,
@@ -382,6 +383,98 @@ export function canTemporarilyRemovePlayer(
   };
 }
 
+/* =========================================================
+   AKTİF 10 KİŞİLİK KADRO
+========================================================= */
+
+export function getActiveFormationIds(
+  game = {}
+) {
+  const ids = [];
+
+  const add = (value) => {
+    if (!value) {
+      return;
+    }
+
+    if (
+      typeof value ===
+      "string"
+    ) {
+      ids.push(value);
+      return;
+    }
+
+    if (
+      typeof value ===
+        "object" &&
+      value.id
+    ) {
+      ids.push(value.id);
+    }
+  };
+
+  const formation =
+    game.formation ||
+    game.team?.formation ||
+    game.activeFormation ||
+    {};
+
+  Object.values(
+    formation
+  ).forEach((value) => {
+    if (
+      Array.isArray(value)
+    ) {
+      value.forEach(add);
+    } else {
+      add(value);
+    }
+  });
+
+  [
+    game.squad,
+    game.activeSquad,
+    game.lineup,
+    game.startingPlayers,
+    game.startingXI,
+    game.team?.squad,
+    game.team?.startingXI,
+  ].forEach((list) => {
+    if (
+      Array.isArray(list)
+    ) {
+      list.forEach(add);
+    }
+  });
+
+  return [
+    ...new Set(ids),
+  ].slice(
+    0,
+    squadRequirements.total
+  );
+}
+
+export function isPlayerInActiveFormation(
+  player,
+  game
+) {
+  if (!player) {
+    return false;
+  }
+
+  return getActiveFormationIds(
+    game
+  ).includes(
+    player.id
+  );
+}
+
+/* =========================================================
+   SATIŞ
+========================================================= */
+
 export function canSellPlayer(
   game,
   player
@@ -414,6 +507,19 @@ export function canSellPlayer(
   }
 
   if (
+    isPlayerInActiveFormation(
+      player,
+      game
+    )
+  ) {
+    return {
+      allowed: false,
+      message:
+        "🔒 OYUNCU ŞU AN KADRODA",
+    };
+  }
+
+  if (
     isPlayerBusy(
       player,
       game
@@ -422,7 +528,7 @@ export function canSellPlayer(
     return {
       allowed: false,
       message:
-        "Bu oyuncu şu anda antrenmanda veya kiralıkta olduğu için satılamaz.",
+        "Bu oyuncu şu anda antrenmanda, antrenörde veya kiralıkta.",
     };
   }
 
@@ -432,15 +538,62 @@ export function canSellPlayer(
   );
 }
 
+/* =========================================================
+   ANTRENMAN
+========================================================= */
+
 export function canSendToTraining(
   game,
-  player
+  player,
+  stageCap = 99
 ) {
   if (!player) {
     return {
       allowed: false,
       message:
         "Oyuncu bulunamadı.",
+    };
+  }
+
+  if (player.sold) {
+    return {
+      allowed: false,
+      message:
+        "Bu oyuncu satılmış.",
+    };
+  }
+
+  if (
+    player.overall >= 100
+  ) {
+    return {
+      allowed: false,
+      message:
+        "MAX GEN",
+    };
+  }
+
+  if (
+    player.overall >=
+    stageCap
+  ) {
+    return {
+      allowed: false,
+      message:
+        `AŞAMA SINIRI: ${stageCap} GEN`,
+    };
+  }
+
+  if (
+    isPlayerInActiveFormation(
+      player,
+      game
+    )
+  ) {
+    return {
+      allowed: false,
+      message:
+        "🔒 KADRODA",
     };
   }
 
@@ -462,6 +615,75 @@ export function canSendToTraining(
     player.id
   );
 }
+
+/* =========================================================
+   ANTRENÖR
+========================================================= */
+
+export function canSendToCoach(
+  game,
+  player,
+  stageCap = 99
+) {
+  return canSendToTraining(
+    game,
+    player,
+    stageCap
+  );
+}
+
+/* =========================================================
+   FULL ANTRENMAN
+========================================================= */
+
+export function getFullTrainingForPlayer(
+  game,
+  player,
+  stageCap = 99
+) {
+  const check =
+    canSendToTraining(
+      game,
+      player,
+      stageCap
+    );
+
+  if (!check.allowed) {
+    return {
+      allowed: false,
+      message:
+        check.message,
+      gain: 0,
+      hours: 0,
+      milliseconds: 0,
+      cost: 0,
+      targetOverall:
+        player?.overall || 0,
+    };
+  }
+
+  const plan =
+    calculateFullTrainingPlan(
+      player.overall,
+      stageCap
+    );
+
+  return {
+    allowed:
+      plan.gain > 0,
+
+    message:
+      plan.gain > 0
+        ? ""
+        : "Oyuncu zaten maksimum seviyede.",
+
+    ...plan,
+  };
+}
+
+/* =========================================================
+   KİRALAMA
+========================================================= */
 
 export function canRentPlayer(
   game,
@@ -487,6 +709,19 @@ export function canRentPlayer(
   }
 
   if (
+    isPlayerInActiveFormation(
+      player,
+      game
+    )
+  ) {
+    return {
+      allowed: false,
+      message:
+        "🔒 OYUNCU ŞU AN KADRODA",
+    };
+  }
+
+  if (
     isPlayerBusy(
       player,
       game
@@ -504,6 +739,10 @@ export function canRentPlayer(
     player.id
   );
 }
+
+/* =========================================================
+   SAAT FORMATLARI
+========================================================= */
 
 export function millisecondsToClock(
   milliseconds
@@ -578,6 +817,10 @@ export function formatPlayTime(
   return `${minutes} dakika`;
 }
 
+/* =========================================================
+   GÜNLÜK ÖDÜL
+========================================================= */
+
 export function getNextDailyRewardTime(
   game
 ) {
@@ -628,6 +871,10 @@ export function isDailyRewardReady(
   );
 }
 
+/* =========================================================
+   EVENT COOLDOWN
+========================================================= */
+
 export function getEventCooldownRemaining(
   eventState,
   now = Date.now()
@@ -655,6 +902,10 @@ export function isEventMatchReady(
     ) === 0
   );
 }
+
+/* =========================================================
+   KİRALIK İLERLEMESİ
+========================================================= */
 
 export function getRentalProgress(
   rental,
@@ -698,6 +949,10 @@ export function getRentalProgress(
       ),
   };
 }
+
+/* =========================================================
+   ANTRENÖR İLERLEMESİ
+========================================================= */
 
 export function getCoachSessionProgress(
   session,
