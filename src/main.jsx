@@ -103,7 +103,7 @@ const CAREER_TARGETS = [
   100,
 ];
 
-const EVENT_TARGETS = [
+const EVENT_WIN_TARGETS = [
   1,
   5,
   10,
@@ -116,8 +116,6 @@ const EVENT_TARGETS = [
   250,
   300,
   355,
-  5,
-  10,
 ];
 
 const COIN_TARGETS = [
@@ -133,138 +131,6 @@ const DAILY_TARGETS = [
   3,
   5,
   7,
-];
-
-const RENTAL_ACHIEVEMENTS = [
-  {
-    id: "rental-center",
-    title: "Kiralık Merkezi",
-    text:
-      "Kiralık Oyuncu Merkezi'ni aç.",
-  },
-
-  {
-    id: "rental-slot-1",
-    title: "İlk Slot",
-    text:
-      "1 kiralama slotu aç.",
-  },
-
-  {
-    id: "rental-slot-2",
-    title: "İkinci Slot",
-    text:
-      "2 kiralama slotu aç.",
-  },
-
-  {
-    id: "rental-slot-3",
-    title: "Üçlü Sistem",
-    text:
-      "3 kiralama slotu aç.",
-  },
-
-  {
-    id: "rental-slot-5",
-    title: "Kiralama Patronu",
-    text:
-      "Tüm kiralama slotlarını aç.",
-  },
-
-  {
-    id: "rental-income-1000",
-    title: "İlk Pasif Gelir",
-    text:
-      "Kiralamadan toplam 1.000 Coin kazan.",
-  },
-
-  {
-    id: "rental-income-5000",
-    title: "Yan Gelir",
-    text:
-      "Kiralamadan toplam 5.000 Coin kazan.",
-  },
-
-  {
-    id: "rental-income-25000",
-    title: "Kiralama İmparatorluğu",
-    text:
-      "Kiralamadan toplam 25.000 Coin kazan.",
-  },
-];
-
-const COACH_ACHIEVEMENTS = [
-  {
-    id: "coach-first",
-    title: "İlk Antrenör",
-    text:
-      "İlk antrenörünü satın al.",
-  },
-
-  {
-    id: "coach-2-star",
-    title: "İki Yıldız",
-    text:
-      "2 yıldızlı antrenörü satın al.",
-  },
-
-  {
-    id: "coach-3-star",
-    title: "Profesyonel Ekip",
-    text:
-      "3 yıldızlı antrenörü satın al.",
-  },
-
-  {
-    id: "coach-5-star",
-    title: "Dünya Klası",
-    text:
-      "5 yıldızlı antrenörü satın al.",
-  },
-
-  {
-    id: "coach-gain-25",
-    title: "Gelişim Ustası",
-    text:
-      "Antrenörlerle toplam 25 GEN kazandır.",
-  },
-
-  {
-    id: "coach-gain-100",
-    title: "Futbol Fabrikası",
-    text:
-      "Antrenörlerle toplam 100 GEN kazandır.",
-  },
-];
-
-const STAGE_ACHIEVEMENTS = [
-  {
-    id: "stage-2",
-    title: "İkinci Aşama",
-    text:
-      "Aşama 2'yi aç.",
-  },
-
-  {
-    id: "stage-5",
-    title: "Yolun Yarısı",
-    text:
-      "Aşama 5'i aç.",
-  },
-
-  {
-    id: "stage-8",
-    title: "Elit Seviye",
-    text:
-      "Aşama 8'i aç.",
-  },
-
-  {
-    id: "stage-10",
-    title: "Son Aşama",
-    text:
-      "Aşama 10'u aç.",
-  },
 ];
 
 function makeAchievement(
@@ -285,7 +151,7 @@ function makeAchievement(
 
 const ACHIEVEMENTS = [
   ...TRAINING_TARGETS.map(
-    (target, index) =>
+    (target) =>
       makeAchievement(
         `training-${target}`,
         `Antrenman ${target}`,
@@ -315,7 +181,7 @@ const ACHIEVEMENTS = [
       makeAchievement(
         `collection-${target}`,
         `Koleksiyon ${target}`,
-        `Koleksiyonunda ${target} farklı kart gör.`,
+        `Koleksiyonunda ${target} kart gör.`,
         "KOLEKSİYON",
         (stats) =>
           stats.collectionMax >=
@@ -373,10 +239,7 @@ const ACHIEVEMENTS = [
       )
   ),
 
-  ...EVENT_TARGETS.slice(
-    0,
-    12
-  ).map(
+  ...EVENT_WIN_TARGETS.map(
     (target) =>
       makeAchievement(
         `events-win-${target}`,
@@ -433,199 +296,183 @@ const ACHIEVEMENTS = [
       )
   ),
 
-  ...RENTAL_ACHIEVEMENTS.map(
-    (item) =>
-      makeAchievement(
-        item.id,
-        item.title,
-        item.text,
-        "KİRALAMA",
-        (stats) => {
-          if (
-            item.id ===
-            "rental-center"
-          ) {
-            return (
-              stats.rentalUnlocked
-            );
-          }
+  makeAchievement(
+    "rental-center",
+    "Kiralık Merkezi",
+    "Kiralık Oyuncu Merkezi'ni aç.",
+    "KİRALAMA",
+    (stats) =>
+      stats.rentalUnlocked
+  ),
 
-          if (
-            item.id ===
-            "rental-slot-1"
-          ) {
-            return (
-              stats.rentalSlots >=
-              1
-            );
-          }
+  makeAchievement(
+    "rental-slot-1",
+    "İlk Slot",
+    "1 kiralama slotu aç.",
+    "KİRALAMA",
+    (stats) =>
+      stats.rentalSlots >= 1
+  ),
 
-          if (
-            item.id ===
-            "rental-slot-2"
-          ) {
-            return (
-              stats.rentalSlots >=
-              2
-            );
-          }
+  makeAchievement(
+    "rental-slot-2",
+    "İkinci Slot",
+    "2 kiralama slotu aç.",
+    "KİRALAMA",
+    (stats) =>
+      stats.rentalSlots >= 2
+  ),
 
-          if (
-            item.id ===
-            "rental-slot-3"
-          ) {
-            return (
-              stats.rentalSlots >=
-              3
-            );
-          }
+  makeAchievement(
+    "rental-slot-3",
+    "Üçlü Sistem",
+    "3 kiralama slotu aç.",
+    "KİRALAMA",
+    (stats) =>
+      stats.rentalSlots >= 3
+  ),
 
-          if (
-            item.id ===
-            "rental-slot-5"
-          ) {
-            return (
-              stats.rentalSlots >=
-              5
-            );
-          }
+  makeAchievement(
+    "rental-slot-5",
+    "Kiralama Patronu",
+    "Tüm kiralama slotlarını aç.",
+    "KİRALAMA",
+    (stats) =>
+      stats.rentalSlots >= 5
+  ),
 
-          if (
-            item.id ===
-            "rental-income-1000"
-          ) {
-            return (
-              stats.rentalCoins >=
-              1000
-            );
-          }
+  makeAchievement(
+    "rental-income-1000",
+    "İlk Pasif Gelir",
+    "Kiralamadan toplam 1.000 Coin kazan.",
+    "KİRALAMA",
+    (stats) =>
+      stats.rentalCoins >= 1000
+  ),
 
-          if (
-            item.id ===
-            "rental-income-5000"
-          ) {
-            return (
-              stats.rentalCoins >=
-              5000
-            );
-          }
+  makeAchievement(
+    "rental-income-5000",
+    "Yan Gelir",
+    "Kiralamadan toplam 5.000 Coin kazan.",
+    "KİRALAMA",
+    (stats) =>
+      stats.rentalCoins >= 5000
+  ),
 
-          return (
-            stats.rentalCoins >=
-            25000
-          );
-        }
+  makeAchievement(
+    "rental-income-25000",
+    "Kiralama İmparatorluğu",
+    "Kiralamadan toplam 25.000 Coin kazan.",
+    "KİRALAMA",
+    (stats) =>
+      stats.rentalCoins >= 25000
+  ),
+
+  makeAchievement(
+    "coach-first",
+    "İlk Antrenör",
+    "İlk antrenörünü satın al.",
+    "ANTRENÖR",
+    (stats) =>
+      stats.coachCount >= 1
+  ),
+
+  makeAchievement(
+    "coach-2-star",
+    "İki Yıldız",
+    "2 yıldızlı antrenörü satın al.",
+    "ANTRENÖR",
+    (stats) =>
+      stats.coachStars.includes(
+        2
       )
   ),
 
-  ...COACH_ACHIEVEMENTS.map(
-    (item) =>
-      makeAchievement(
-        item.id,
-        item.title,
-        item.text,
-        "ANTRENÖR",
-        (stats) => {
-          if (
-            item.id ===
-            "coach-first"
-          ) {
-            return (
-              stats.coachCount >=
-              1
-            );
-          }
-
-          if (
-            item.id ===
-            "coach-2-star"
-          ) {
-            return stats.coachStars.includes(
-              2
-            );
-          }
-
-          if (
-            item.id ===
-            "coach-3-star"
-          ) {
-            return stats.coachStars.includes(
-              3
-            );
-          }
-
-          if (
-            item.id ===
-            "coach-5-star"
-          ) {
-            return stats.coachStars.includes(
-              5
-            );
-          }
-
-          if (
-            item.id ===
-            "coach-gain-25"
-          ) {
-            return (
-              stats.coachGains >=
-              25
-            );
-          }
-
-          return (
-            stats.coachGains >=
-            100
-          );
-        }
+  makeAchievement(
+    "coach-3-star",
+    "Profesyonel Ekip",
+    "3 yıldızlı antrenörü satın al.",
+    "ANTRENÖR",
+    (stats) =>
+      stats.coachStars.includes(
+        3
       )
   ),
 
-  ...STAGE_ACHIEVEMENTS.map(
-    (item) =>
-      makeAchievement(
-        item.id,
-        item.title,
-        item.text,
-        "AŞAMA",
-        (stats) => {
-          const target =
-            Number(
-              item.id.split(
-                "-"
-              )[1]
-            );
-
-          return (
-            stats.maxStage >=
-            target
-          );
-        }
+  makeAchievement(
+    "coach-5-star",
+    "Dünya Klası",
+    "5 yıldızlı antrenörü satın al.",
+    "ANTRENÖR",
+    (stats) =>
+      stats.coachStars.includes(
+        5
       )
+  ),
+
+  makeAchievement(
+    "coach-gain-25",
+    "Gelişim Ustası",
+    "Antrenörlerle toplam 25 GEN kazandır.",
+    "ANTRENÖR",
+    (stats) =>
+      stats.coachGains >= 25
+  ),
+
+  makeAchievement(
+    "coach-gain-100",
+    "Futbol Fabrikası",
+    "Antrenörlerle toplam 100 GEN kazandır.",
+    "ANTRENÖR",
+    (stats) =>
+      stats.coachGains >= 100
+  ),
+
+  makeAchievement(
+    "stage-2",
+    "İkinci Aşama",
+    "Aşama 2'yi aç.",
+    "AŞAMA",
+    (stats) =>
+      stats.maxStage >= 2
+  ),
+
+  makeAchievement(
+    "stage-5",
+    "Yolun Yarısı",
+    "Aşama 5'i aç.",
+    "AŞAMA",
+    (stats) =>
+      stats.maxStage >= 5
+  ),
+
+  makeAchievement(
+    "stage-8",
+    "Elit Seviye",
+    "Aşama 8'i aç.",
+    "AŞAMA",
+    (stats) =>
+      stats.maxStage >= 8
+  ),
+
+  makeAchievement(
+    "stage-10",
+    "Son Aşama",
+    "Aşama 10'u aç.",
+    "AŞAMA",
+    (stats) =>
+      stats.maxStage >= 10
   ),
 
   makeAchievement(
     "el-turco-legend",
     "EL TURCO EFSANESİ",
-    "Son aşamaya ulaş, tüm etkinlikleri bitir ve EL TURCO kartını kazan.",
+    "EL TURCO kartını kazan.",
     "EFSANE",
     (stats) =>
-      stats.maxStage >= 10 &&
-      stats.completedEvents >=
-        10 &&
       stats.hasElTurco
   ),
 ];
-
-if (
-  ACHIEVEMENTS.length !==
-  100
-) {
-  console.warn(
-    "SCW achievement count:",
-    ACHIEVEMENTS.length
-  );
-}
 
 function defaultStats() {
   return {
@@ -633,37 +480,27 @@ function defaultStats() {
     transfersBought: 0,
 
     collectionMax: 0,
-
     maxOverall: 0,
 
     customPlayers: 0,
-
     maxCustomOverall: 0,
 
     careerWins: 0,
 
     eventWins: 0,
-
     completedEvents: 0,
 
     maxCoins: 0,
-
     maxDailyStreak: 0,
 
     maxStage: 1,
 
     rentalUnlocked: false,
-
     rentalSlots: 0,
-
     rentalCoins: 0,
 
-    rentalCompleted: 0,
-
     coachCount: 0,
-
     coachStars: [],
-
     coachGains: 0,
 
     hasElTurco: false,
@@ -729,12 +566,6 @@ function getCurrentMetrics(
     )
       ? game.collection
       : [];
-
-  const activeCollection =
-    collection.filter(
-      (player) =>
-        !player.sold
-    );
 
   const maxOverall =
     collection.reduce(
@@ -802,9 +633,6 @@ function getCurrentMetrics(
     collectionCount:
       collection.length,
 
-    activeCollection:
-      activeCollection.length,
-
     maxOverall,
 
     customPlayers:
@@ -829,7 +657,8 @@ function getCurrentMetrics(
 
     dailyStreak:
       Number(
-        game.daily?.streak
+        game.daily
+          ?.streak
       ) || 0,
 
     stage:
@@ -861,12 +690,6 @@ function getCurrentMetrics(
           ?.lifetimeCoins
       ) || 0,
 
-    rentalCompleted:
-      Number(
-        game.rentalCenter
-          ?.completedRentals
-      ) || 0,
-
     coachCount:
       coachStars.length,
 
@@ -890,7 +713,8 @@ function getCurrentMetrics(
   };
 }
 
-let lastGame = readGame();
+let lastGame =
+  readGame();
 
 let achievementStats =
   readStats();
@@ -1002,12 +826,6 @@ function processGameChange(
       metrics.rentalCoins
     );
 
-  achievementStats.rentalCompleted =
-    Math.max(
-      achievementStats.rentalCompleted,
-      metrics.rentalCompleted
-    );
-
   achievementStats.coachCount =
     Math.max(
       achievementStats.coachCount,
@@ -1067,12 +885,14 @@ function processGameChange(
   saveStats(
     achievementStats
   );
+
+  updateAchievementButton();
 }
 
-function ensureAchievementStyles() {
+function ensureStyles() {
   if (
     document.getElementById(
-      "scw-achievement-style"
+      "scw-main-extra-styles"
     )
   ) {
     return;
@@ -1084,12 +904,21 @@ function ensureAchievementStyles() {
     );
 
   style.id =
-    "scw-achievement-style";
+    "scw-main-extra-styles";
 
   style.textContent = `
+    #scw-achievement-dock {
+      width: min(100%, 980px);
+      margin: -36px auto 48px;
+      padding: 0 12px;
+      position: relative;
+      z-index: 5;
+    }
+
     .scw-achievement-button {
-      min-height: 125px;
-      padding: 12px;
+      width: 100%;
+      min-height: 105px;
+      padding: 16px;
       border: 1px solid #695528;
       border-radius: 17px;
       background:
@@ -1110,7 +939,7 @@ function ensureAchievementStyles() {
     .scw-achievement-button strong {
       display: block;
       margin-top: 7px;
-      font-size: 15px;
+      font-size: 17px;
     }
 
     .scw-achievement-button small {
@@ -1137,13 +966,11 @@ function ensureAchievementStyles() {
     }
 
     .scw-achievement-wrap {
-      width:
-        min(
-          100%,
-          900px
-        );
-      margin:
-        0 auto;
+      width: min(
+        100%,
+        900px
+      );
+      margin: 0 auto;
     }
 
     .scw-achievement-top {
@@ -1152,8 +979,7 @@ function ensureAchievementStyles() {
       justify-content:
         space-between;
       gap: 12px;
-      margin-bottom:
-        16px;
+      margin-bottom: 16px;
     }
 
     .scw-achievement-close {
@@ -1167,8 +993,7 @@ function ensureAchievementStyles() {
     }
 
     .scw-achievement-progress {
-      margin-bottom:
-        18px;
+      margin-bottom: 18px;
       padding: 14px;
       border: 1px solid #665024;
       border-radius: 14px;
@@ -1202,8 +1027,7 @@ function ensureAchievementStyles() {
 
     .scw-achievement-card strong {
       display: block;
-      margin:
-        4px 0;
+      margin: 4px 0;
     }
 
     .scw-achievement-card small {
@@ -1212,8 +1036,7 @@ function ensureAchievementStyles() {
     }
 
     .scw-achievement-card p {
-      margin:
-        5px 0 0;
+      margin: 5px 0 0;
       color: #a7afb8;
       font-size: 10px;
       line-height: 1.4;
@@ -1236,11 +1059,10 @@ function ensureAchievementStyles() {
     }
 
     .scw-exit-box {
-      width:
-        min(
-          100%,
-          380px
-        );
+      width: min(
+        100%,
+        380px
+      );
       padding: 20px;
       border: 1px solid #353d46;
       border-radius: 17px;
@@ -1434,14 +1256,24 @@ function openAchievements() {
     );
 }
 
-function refreshAchievementButton() {
-  const menu =
-    document.querySelector(
-      ".menu-grid"
+function createAchievementDock() {
+  let dock =
+    document.getElementById(
+      "scw-achievement-dock"
     );
 
-  if (!menu) {
-    return;
+  if (!dock) {
+    dock =
+      document.createElement(
+        "div"
+      );
+
+    dock.id =
+      "scw-achievement-dock";
+
+    document.body.appendChild(
+      dock
+    );
   }
 
   let button =
@@ -1469,30 +1301,36 @@ function refreshAchievementButton() {
       openAchievements
     );
 
-    menu.appendChild(
+    dock.appendChild(
       button
     );
   }
 
-  const unlockedCount =
-    achievementStats
-      .unlocked.length;
+  updateAchievementButton();
+}
 
-  const label = `
+function updateAchievementButton() {
+  const button =
+    document.getElementById(
+      "scw-achievement-button"
+    );
+
+  if (!button) {
+    return;
+  }
+
+  button.innerHTML = `
     <span>🏆</span>
     <strong>BAŞARIMLAR</strong>
     <small>
-      ${unlockedCount} / ${ACHIEVEMENTS.length}
+      ${
+        achievementStats
+          .unlocked.length
+      } / ${
+        ACHIEVEMENTS.length
+      }
     </small>
   `;
-
-  if (
-    button.innerHTML !==
-    label
-  ) {
-    button.innerHTML =
-      label;
-  }
 }
 
 function showExitConfirmation() {
@@ -1625,7 +1463,7 @@ function setupExitGuard() {
   );
 }
 
-ensureAchievementStyles();
+ensureStyles();
 
 const root =
   createRoot(
@@ -1642,10 +1480,10 @@ root.render(
   )
 );
 
-setTimeout(
-  setupExitGuard,
-  300
-);
+setTimeout(() => {
+  setupExitGuard();
+  createAchievementDock();
+}, 300);
 
 setInterval(() => {
   const currentGame =
@@ -1673,8 +1511,6 @@ setInterval(() => {
     lastGame =
       currentGame;
   }
-
-  refreshAchievementButton();
 }, 800);
 
 if (
