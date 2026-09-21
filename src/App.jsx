@@ -8,27 +8,62 @@ import PlayerCard from "./components/PlayerCard";
 
 import {
   calculatePlayerPrice,
+  calculateRentalIncome,
   calculateTrainingCost,
-  careerLeagues,
+  coachConfigs,
+  countries,
   createCustomPlayer,
+  createStageRewardPlayer,
   eventConfigs,
   generateEventShop,
   generateMarketPlayers,
   generateOpponentDeck,
-  generatePlayer,
+  generateRewardChoices,
   generateStarterPlayers,
+  getCountryFlag,
   getEventConfig,
+  getPositionGroup,
   getRarity,
+  getStageReward,
+  getUpgradePackReward,
+  positionGroups,
   positions,
   randomItem,
+  rentalCenterConfig,
   shuffle,
+  squadRequirements,
+  stageRewards,
   trainingPlans,
+  upgradePackTypes,
 } from "./data/players";
 
-const SAVE_KEY =
-  "soccer-cards-war-save-v4";
+import {
+  DAILY_REWARD_COOLDOWN_MS,
+  EVENT_MATCH_COOLDOWN_MS,
+  canRentPlayer,
+  canSellPlayer,
+  canSendToTraining,
+  canStartCareer,
+  canStartEvent,
+  formatPlayTime,
+  getActivePlayers,
+  getDailyRewardRemaining,
+  getEventCooldownRemaining,
+  getSquadProblems,
+  isDailyRewardReady,
+  isPlayerBusy,
+  millisecondsToClock,
+} from "./utils/gameRules";
 
-const SAVE_VERSION = 4;
+const SAVE_KEY =
+  "soccer-cards-war-save-v5";
+
+const SAVE_VERSION = 5;
+
+const HOME_HISTORY = {
+  scw: true,
+  view: "home",
+};
 
 const STORE_TEST_MODE = true;
 
@@ -37,230 +72,1056 @@ const COIN_PACKAGES = [
     id: "coins-3000",
     coins: 3000,
     price: "$1.00",
-    paymentUrl: "",
   },
   {
     id: "coins-5000",
     coins: 5000,
     price: "$1.50",
-    paymentUrl: "",
   },
   {
     id: "coins-12000",
     coins: 12000,
     price: "$3.00",
-    paymentUrl: "",
   },
   {
     id: "coins-30000",
     coins: 30000,
     price: "$6.00",
-    paymentUrl: "",
   },
   {
     id: "coins-75000",
     coins: 75000,
     price: "$12.00",
-    paymentUrl: "",
   },
 ];
 
-const HOME_HISTORY = {
-  scw: true,
-  view: "home",
-};
+const TEAM_SLOTS = [
+  {
+    id: "fw1",
+    label: "FORVET",
+    group: "forward",
+  },
+  {
+    id: "fw2",
+    label: "FORVET",
+    group: "forward",
+  },
 
-const EXTRA_UI_CSS = `
-  .store-test-banner {
+  {
+    id: "mid1",
+    label: "ORTA SAHA",
+    group: "midfield",
+  },
+  {
+    id: "mid2",
+    label: "ORTA SAHA",
+    group: "midfield",
+  },
+  {
+    id: "mid3",
+    label: "ORTA SAHA",
+    group: "midfield",
+  },
+
+  {
+    id: "def1",
+    label: "DEFANS",
+    group: "defense",
+  },
+  {
+    id: "def2",
+    label: "DEFANS",
+    group: "defense",
+  },
+  {
+    id: "def3",
+    label: "DEFANS",
+    group: "defense",
+  },
+  {
+    id: "def4",
+    label: "DEFANS",
+    group: "defense",
+  },
+
+  {
+    id: "gk",
+    label: "KALECİ",
+    group: "goalkeeper",
+  },
+];
+
+const MATCH_GROUP_ORDER = [
+  "forward",
+  "midfield",
+  "defense",
+  "midfield",
+  "goalkeeper",
+];
+
+const APP_CSS = `
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: #07090d;
+    color: #f3f5f7;
+    font-family:
+      Inter,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  .app-shell {
+    width: min(100%, 980px);
+    margin: 0 auto;
+    padding: 12px 12px 48px;
+  }
+
+  .top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 14px 16px;
-    margin: 0 0 18px;
-    border: 1px solid #675226;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #19140c, #0c1015);
-  }
-
-  .store-test-banner strong {
-    color: #e4b65c;
-    font-size: 13px;
-  }
-
-  .store-test-banner span {
-    color: #8d96a2;
-    font-size: 10px;
-    text-align: right;
-  }
-
-  .coupon-box {
-    display: grid;
-    grid-template-columns: 1fr auto;
     gap: 10px;
-    padding: 16px;
-    margin-bottom: 20px;
-    border: 1px solid #313944;
-    border-radius: 14px;
-    background: linear-gradient(145deg, #11161d, #0a0d11);
+    padding: 10px 0;
+    background: rgba(7, 9, 13, .94);
+    backdrop-filter: blur(14px);
   }
 
-  .coupon-copy {
-    grid-column: 1 / -1;
+  .club-button,
+  .profile-small-button {
+    border: 1px solid #303742;
+    background: #10151c;
+    color: white;
+    border-radius: 13px;
+    min-height: 44px;
   }
 
-  .coupon-copy h2 {
-    margin: 3px 0 4px;
-  }
-
-  .coupon-copy p {
-    margin: 0;
-    color: #7f8995;
-    font-size: 11px;
-  }
-
-  .coupon-box input {
+  .club-button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    text-align: left;
     min-width: 0;
   }
 
-  .coin-pack-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
+  .club-button img {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
   }
 
-  .coin-pack-card {
-    padding: 18px 14px;
-    border: 1px solid #343b45;
-    border-radius: 14px;
-    background: linear-gradient(145deg, #12171d, #090c10);
-    text-align: center;
+  .club-name {
+    font-size: 13px;
+    font-weight: 950;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
   }
 
-  .coin-pack-card .coin-pack-icon {
-    font-size: 29px;
+  .club-sub {
+    color: #737d89;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .08em;
   }
 
-  .coin-pack-card h3 {
-    margin: 8px 0 2px;
+  .top-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .currency {
+    padding: 7px 9px;
+    border: 1px solid #282f38;
+    border-radius: 11px;
+    background: #0d1116;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .profile-small-button {
+    width: 44px;
     font-size: 20px;
   }
 
-  .coin-pack-card p {
-    margin: 0 0 12px;
-    color: #8a939f;
+  .page-card,
+  .panel {
+    border: 1px solid #292f38;
+    border-radius: 18px;
+    background:
+      linear-gradient(
+        145deg,
+        #11161d,
+        #090c10
+      );
+  }
+
+  .page-card {
+    padding: 18px;
+  }
+
+  .panel {
+    padding: 15px;
+  }
+
+  .section-title {
+    margin: 0 0 5px;
+    font-size: 24px;
+    font-weight: 1000;
+  }
+
+  .section-subtitle {
+    margin: 0;
+    color: #7e8792;
     font-size: 11px;
+    line-height: 1.5;
   }
 
-  .coin-pack-card button {
-    width: 100%;
+  .section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 16px;
   }
 
-  .sell-section {
-    margin-top: 30px;
+  .back-button,
+  .primary-button,
+  .secondary-button,
+  .danger-button,
+  .gold-button,
+  .blue-button,
+  .green-button {
+    min-height: 44px;
+    padding: 0 15px;
+    border-radius: 11px;
+    border: 1px solid transparent;
+    font-weight: 950;
   }
 
-  .sell-grid {
+  .back-button,
+  .secondary-button {
+    border-color: #303740;
+    background: #11161c;
+    color: #cfd5db;
+  }
+
+  .primary-button {
+    background: #eceff3;
+    color: #080a0d;
+  }
+
+  .danger-button {
+    background: #3d1717;
+    border-color: #6a2727;
+    color: #ffb0a8;
+  }
+
+  .gold-button {
+    background:
+      linear-gradient(
+        135deg,
+        #78581b,
+        #3f2c0d
+      );
+    border-color: #8d6b2b;
+    color: #ffda82;
+  }
+
+  .blue-button {
+    background:
+      linear-gradient(
+        135deg,
+        #153b67,
+        #0c203c
+      );
+    border-color: #245d98;
+    color: #9ed1ff;
+  }
+
+  .green-button {
+    background:
+      linear-gradient(
+        135deg,
+        #174d35,
+        #0c2a1d
+      );
+    border-color: #287b57;
+    color: #a7f4ce;
+  }
+
+  .menu-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
     gap: 12px;
   }
 
-  .sell-player-box {
-    min-width: 0;
+  .menu-card {
+    min-height: 142px;
+    padding: 16px;
+    border: 1px solid #303640;
+    border-radius: 17px;
+    color: white;
+    text-align: left;
+    background: #11161c;
+    overflow: hidden;
+    position: relative;
   }
 
-  .sell-button {
-    width: 100%;
-    min-height: 38px;
+  .menu-card strong {
+    display: block;
+    font-size: 18px;
     margin-top: 7px;
-    border: 1px solid #70463a;
-    border-radius: 9px;
-    background: linear-gradient(135deg, #4a2821, #271713);
-    color: #f2b29f;
-    font-weight: 900;
-    cursor: pointer;
   }
 
-  .sell-button:disabled {
-    opacity: .45;
-    cursor: not-allowed;
+  .menu-card span {
+    display: block;
+    margin-top: 4px;
+    color: rgba(255,255,255,.68);
+    font-size: 10px;
+    line-height: 1.4;
   }
 
-  .training-speed-box {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 7px;
+  .menu-icon {
+    font-size: 30px;
   }
 
-  .training-speed-cost {
-    color: #e1b258;
-    font-size: 11px;
-    font-weight: 900;
+  .menu-career {
+    background:
+      radial-gradient(
+        circle at 85% 10%,
+        rgba(255,95,0,.32),
+        transparent 35%
+      ),
+      linear-gradient(
+        145deg,
+        #40130c,
+        #160a08
+      );
+    border-color: #88321f;
   }
 
-  .training-speed-button {
-    min-height: 42px;
-    padding: 0 15px;
-    border: 1px solid #785b25;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #6c4d18, #37260d);
-    color: #ffd982;
-    font-weight: 950;
-    cursor: pointer;
+  .menu-event {
+    background:
+      radial-gradient(
+        circle at 85% 10%,
+        rgba(0,145,255,.27),
+        transparent 35%
+      ),
+      linear-gradient(
+        145deg,
+        #102d4f,
+        #08121f
+      );
+    border-color: #275b91;
   }
 
-  .training-speed-button:disabled {
-    opacity: .45;
-    cursor: not-allowed;
+  .menu-training {
+    background:
+      radial-gradient(
+        circle at 85% 10%,
+        rgba(25,220,120,.22),
+        transparent 35%
+      ),
+      linear-gradient(
+        145deg,
+        #123724,
+        #091a11
+      );
+    border-color: #286747;
   }
 
-  .store-security-note {
-    margin-top: 18px;
-    padding: 13px 15px;
+  .menu-transfer {
+    background:
+      linear-gradient(
+        145deg,
+        #392c11,
+        #171208
+      );
+    border-color: #705825;
+  }
+
+  .info-box {
+    margin: 12px 0 16px;
+    padding: 12px 14px;
+    border: 1px solid #2c3540;
     border-radius: 12px;
-    background: #0d1116;
-    border: 1px solid #262d35;
-    color: #737d89;
+    background: #0c1117;
+    color: #84909d;
     font-size: 10px;
     line-height: 1.5;
   }
 
-  @media (max-width: 700px) {
-    .coin-pack-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+  .notice {
+    margin: 10px 0;
+    padding: 12px 14px;
+    border: 1px solid #6f5622;
+    border-radius: 12px;
+    background: #241b0c;
+    color: #f1cd79;
+    font-weight: 850;
+    font-size: 11px;
+  }
+
+  .player-grid {
+    display: grid;
+    grid-template-columns:
+      repeat(4, minmax(0, 1fr));
+    gap: 11px;
+  }
+
+  .player-card {
+    width: 100%;
+    min-width: 0;
+    border-radius: 15px;
+    padding: 10px;
+    border: 1px solid #38414b;
+    color: white;
+    background:
+      linear-gradient(
+        145deg,
+        #1a2027,
+        #0c1015
+      );
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+  }
+
+  .player-card:disabled {
+    opacity: .58;
+  }
+
+  .player-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .player-overall {
+    font-size: 24px;
+    font-weight: 1000;
+  }
+
+  .player-position {
+    font-size: 9px;
+    font-weight: 900;
+    color: #a9b0b8;
+  }
+
+  .player-flag {
+    font-size: 20px;
+  }
+
+  .player-group-label {
+    margin-top: 5px;
+    font-size: 8px;
+    font-weight: 1000;
+    letter-spacing: .08em;
+    color: #8c96a2;
+  }
+
+  .player-portrait {
+    width: 62px;
+    height: 62px;
+    margin: 9px auto;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #11171d;
+    border: 1px solid #3a444f;
+    font-size: 19px;
+    font-weight: 1000;
+  }
+
+  .player-name {
+    font-size: 11px;
+    font-weight: 950;
+    line-height: 1.15;
+    min-height: 26px;
+  }
+
+  .player-rarity,
+  .custom-player-label,
+  .selected-player-label,
+  .player-status-label,
+  .stage-reward-label,
+  .player-price {
+    margin-top: 5px;
+    font-size: 8px;
+    font-weight: 950;
+  }
+
+  .rarity-rare {
+    border-color: #3975a8;
+  }
+
+  .rarity-gold {
+    border-color: #a17a2a;
+    background:
+      linear-gradient(
+        145deg,
+        #35280d,
+        #10100a
+      );
+  }
+
+  .rarity-platinum {
+    border-color: #66a6a8;
+  }
+
+  .rarity-epic {
+    border-color: #75489f;
+    background:
+      linear-gradient(
+        145deg,
+        #251330,
+        #0e0912
+      );
+  }
+
+  .rarity-legendary {
+    border-color: #bb6b2a;
+    background:
+      linear-gradient(
+        145deg,
+        #42220c,
+        #120b07
+      );
+  }
+
+  .rarity-icon {
+    border-color: #d8d1a4;
+    background:
+      linear-gradient(
+        145deg,
+        #49452c,
+        #11100b
+      );
+  }
+
+  .player-card-elturco,
+  .rarity-elturco {
+    border: 2px solid #ff9d27;
+    background:
+      radial-gradient(
+        circle at 50% 100%,
+        rgba(255,69,0,.42),
+        transparent 42%
+      ),
+      linear-gradient(
+        145deg,
+        #501506,
+        #120705
+      );
+    box-shadow:
+      inset 0 0 25px rgba(255,85,0,.2);
+  }
+
+  .player-card-elturco::before {
+    content: "🔥";
+    position: absolute;
+    font-size: 70px;
+    opacity: .12;
+    left: -10px;
+    bottom: -15px;
+  }
+
+  .player-card-sold,
+  .player-card-locked {
+    filter: grayscale(1);
+    opacity: .48;
+  }
+
+  .player-card-training {
+    border-color: #2a8a5a;
+  }
+
+  .player-card-rented {
+    border-color: #3e76a6;
+  }
+
+  .team-field {
+    margin: 15px 0;
+    padding: 18px 12px;
+    border-radius: 18px;
+    border: 1px solid #245d41;
+    background:
+      linear-gradient(
+        180deg,
+        #123b29,
+        #0a2319
+      );
+  }
+
+  .team-row {
+    display: grid;
+    gap: 8px;
+    margin: 8px 0;
+  }
+
+  .team-row.two {
+    grid-template-columns:
+      repeat(2, minmax(0,1fr));
+  }
+
+  .team-row.three {
+    grid-template-columns:
+      repeat(3, minmax(0,1fr));
+  }
+
+  .team-row.four {
+    grid-template-columns:
+      repeat(4, minmax(0,1fr));
+  }
+
+  .team-row.one {
+    grid-template-columns:
+      minmax(0, 180px);
+    justify-content: center;
+  }
+
+  .squad-slot {
+    min-height: 100px;
+    border-radius: 13px;
+    border: 1px dashed #6d9180;
+    background: rgba(0,0,0,.2);
+    color: white;
+    padding: 8px;
+  }
+
+  .squad-slot.filled {
+    border-style: solid;
+    background: rgba(0,0,0,.35);
+  }
+
+  .slot-name {
+    display: block;
+    font-size: 10px;
+    font-weight: 1000;
+  }
+
+  .slot-player-name {
+    display: block;
+    margin-top: 8px;
+    font-size: 10px;
+    font-weight: 900;
+  }
+
+  .slot-overall {
+    font-size: 24px;
+    font-weight: 1000;
+  }
+
+  .list-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid #29313a;
+    border-radius: 13px;
+    background: #0d1218;
+  }
+
+  .list-item h3 {
+    margin: 0 0 3px;
+    font-size: 13px;
+  }
+
+  .list-item p {
+    margin: 0;
+    color: #77818d;
+    font-size: 10px;
+  }
+
+  .action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    margin: 12px 0;
+    padding-bottom: 4px;
+  }
+
+  .tab-button {
+    min-height: 40px;
+    flex: 0 0 auto;
+    padding: 0 12px;
+    border: 1px solid #303841;
+    border-radius: 10px;
+    background: #10151b;
+    color: #aeb5bd;
+    font-weight: 900;
+  }
+
+  .tab-button.active {
+    color: white;
+    border-color: #846429;
+    background: #34270e;
+  }
+
+  .battle-score {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    margin: 15px 0;
+  }
+
+  .battle-score div {
+    min-width: 90px;
+    text-align: center;
+  }
+
+  .battle-score span {
+    display: block;
+    color: #808a95;
+    font-size: 9px;
+  }
+
+  .battle-score strong {
+    display: block;
+    font-size: 30px;
+  }
+
+  .battle-hand {
+    display: grid;
+    grid-template-columns:
+      repeat(3, minmax(0,1fr));
+    gap: 9px;
+  }
+
+  .battle-group {
+    text-align: center;
+    margin: 14px 0;
+    font-size: 18px;
+    font-weight: 1000;
+  }
+
+  .reward-card-back {
+    min-height: 210px;
+    border: 1px solid #725622;
+    border-radius: 15px;
+    background:
+      radial-gradient(
+        circle,
+        #302817,
+        #0d0b08
+      );
+    color: #e6bd64;
+    font-size: 38px;
+    font-weight: 1000;
+  }
+
+  .reward-grid {
+    display: grid;
+    grid-template-columns:
+      repeat(3, minmax(0,1fr));
+    gap: 12px;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    z-index: 100;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(0,0,0,.76);
+  }
+
+  .modal {
+    width: min(100%, 430px);
+    padding: 18px;
+    border: 1px solid #3a424c;
+    border-radius: 17px;
+    background: #11161c;
+  }
+
+  .modal h2 {
+    margin-top: 0;
+  }
+
+  .profile-stat-grid {
+    display: grid;
+    grid-template-columns:
+      repeat(2, minmax(0,1fr));
+    gap: 9px;
+  }
+
+  .profile-stat {
+    padding: 13px;
+    border: 1px solid #2b333c;
+    border-radius: 12px;
+    background: #0b1015;
+  }
+
+  .profile-stat span {
+    display: block;
+    color: #75808b;
+    font-size: 9px;
+  }
+
+  .profile-stat strong {
+    display: block;
+    margin-top: 3px;
+    font-size: 16px;
+  }
+
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid #222a32;
+  }
+
+  .setting-row:last-child {
+    border-bottom: 0;
+  }
+
+  .switch-button {
+    min-width: 76px;
+    min-height: 38px;
+    border-radius: 20px;
+    border: 1px solid #303943;
+    background: #151b22;
+    color: #9da6af;
+    font-size: 10px;
+    font-weight: 950;
+  }
+
+  .switch-button.on {
+    border-color: #347d59;
+    background: #163723;
+    color: #9ff0c5;
+  }
+
+  .rental-slot-grid,
+  .coach-grid,
+  .shop-grid,
+  .stage-reward-grid {
+    display: grid;
+    grid-template-columns:
+      repeat(2, minmax(0,1fr));
+    gap: 10px;
+  }
+
+  .rental-slot,
+  .coach-card,
+  .shop-card,
+  .stage-reward-card {
+    padding: 13px;
+    border: 1px solid #2c343e;
+    border-radius: 13px;
+    background: #0d1218;
+  }
+
+  .stage-reward-card.locked {
+    filter: grayscale(1);
+    opacity: .42;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    margin-top: 7px;
+    padding: 4px 8px;
+    border-radius: 20px;
+    background: #161d25;
+    color: #8f99a4;
+    font-size: 8px;
+    font-weight: 950;
+  }
+
+  .big-number {
+    font-size: 30px;
+    font-weight: 1000;
+  }
+
+  .setup-screen,
+  .intro-screen {
+    min-height: 76vh;
+    display: grid;
+    place-items: center;
+  }
+
+  .intro-box,
+  .setup-box {
+    width: min(100%, 430px);
+    text-align: center;
+  }
+
+  .intro-logo {
+    width: 100px;
+    height: 100px;
+    margin-bottom: 15px;
+  }
+
+  .text-input,
+  .select-input {
+    width: 100%;
+    min-height: 46px;
+    padding: 0 12px;
+    border: 1px solid #343d47;
+    border-radius: 11px;
+    background: #0c1117;
+    color: white;
+    outline: none;
+  }
+
+  .field-label {
+    display: block;
+    margin: 12px 0 6px;
+    color: #8b949e;
+    font-size: 10px;
+    font-weight: 900;
+    text-align: left;
+  }
+
+  @media (max-width: 720px) {
+    .player-grid {
+      grid-template-columns:
+        repeat(2, minmax(0,1fr));
     }
 
-    .sell-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .battle-hand {
+      grid-template-columns:
+        repeat(2, minmax(0,1fr));
     }
 
-    .training-speed-box {
-      align-items: stretch;
-      width: 100%;
+    .top-right .currency:nth-child(2),
+    .top-right .currency:nth-child(3) {
+      display: none;
     }
 
-    .training-running {
-      flex-wrap: wrap;
+    .team-row.four {
+      grid-template-columns:
+        repeat(2, minmax(0,1fr));
     }
   }
 
-  @media (max-width: 390px) {
-    .coupon-box {
+  @media (max-width: 430px) {
+    .menu-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+    }
+
+    .menu-card {
+      min-height: 125px;
+      padding: 12px;
+    }
+
+    .menu-card strong {
+      font-size: 15px;
+    }
+
+    .reward-grid {
+      gap: 6px;
+    }
+
+    .reward-card-back {
+      min-height: 155px;
+    }
+
+    .rental-slot-grid,
+    .coach-grid,
+    .shop-grid,
+    .stage-reward-grid {
       grid-template-columns: 1fr;
     }
 
-    .coupon-copy {
-      grid-column: 1;
-    }
-
-    .coin-pack-grid {
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
+    .club-name {
+      max-width: 105px;
     }
   }
 `;
+
+function buildInitialFormation(
+  starters
+) {
+  const result = {};
+
+  const used = new Set();
+
+  TEAM_SLOTS.forEach(
+    (slot) => {
+      const found =
+        starters.find(
+          (player) => {
+            if (
+              used.has(
+                player.id
+              )
+            ) {
+              return false;
+            }
+
+            const group =
+              player.positionGroup ||
+              getPositionGroup(
+                player.position
+              );
+
+            return (
+              group ===
+              slot.group
+            );
+          }
+        );
+
+      if (found) {
+        result[
+          slot.id
+        ] = found.id;
+
+        used.add(
+          found.id
+        );
+      }
+    }
+  );
+
+  return result;
+}
 
 function createEventStates(
   withShops = false
@@ -271,14 +1132,18 @@ function createEventStates(
         event.id,
         {
           match: 1,
+          wins: 0,
           currency: 0,
           completed: false,
-          shop: withShops
-            ? generateEventShop(
-                event,
-                index
-              )
-            : [],
+          nextMatchAt: 0,
+
+          shop:
+            withShops
+              ? generateEventShop(
+                  event,
+                  index
+                )
+              : [],
         },
       ]
     )
@@ -292,43 +1157,85 @@ function createBlankGame() {
 
     clubName: "",
 
-    coins: 2500,
-
+    coins: 1500,
     gems: 25,
-
     trophies: 0,
 
     collection: [],
 
     squad: [],
 
+    formation: {},
+
     market: [],
 
-    marketCap: 30,
-
-    training: null,
+    marketCap: 25,
 
     trainingCap: 30,
 
-    redeemedCoupons: [],
+    training: null,
 
-    storePurchases: [],
+    upgradePacks: {
+      gen1: 0,
+      gen2: 0,
+      gen4: 0,
+    },
+
+    activeStage: 1,
+
+    career: {
+      stage: 1,
+      match: 1,
+      wins: 0,
+      totalWins: 0,
+      completedStages: [],
+    },
 
     events:
       createEventStates(
         false
       ),
 
-    career: {
-      leagueIndex: 0,
-      match: 1,
-      wins: 0,
-      completed: false,
+    daily: {
+      lastClaimAt: 0,
+      streak: 0,
     },
 
-    daily: {
-      lastClaim: "",
-      streak: 0,
+    profile: {
+      playSeconds: 0,
+      infoEnabled: true,
+      notifications: {
+        daily: true,
+        training: true,
+        rental: true,
+      },
+    },
+
+    rentalCenter: {
+      unlocked: false,
+      slotsUnlocked: 0,
+      rentals: [],
+      pendingCoins: 0,
+      lifetimeCoins: 0,
+      completedRentals: 0,
+    },
+
+    coaches: {
+      ownedStars: [],
+      activeSessions: [],
+      totalGains: 0,
+    },
+
+    stageRewardsClaimed: [],
+
+    redeemedCoupons: [],
+
+    storePurchases: [],
+
+    stats: {
+      transfersBought: 0,
+      playersSold: 0,
+      draws: 0,
     },
   };
 }
@@ -339,102 +1246,83 @@ function normalizeGame(saved) {
 
   if (
     !saved ||
-    typeof saved !== "object"
+    typeof saved !==
+      "object"
   ) {
     return blank;
   }
 
-  const normalizedEvents =
-    createEventStates(false);
+  const events =
+    createEventStates(
+      true
+    );
 
   eventConfigs.forEach(
     (event, index) => {
-      const oldEvent =
+      const old =
         saved.events?.[
           event.id
         ];
 
-      normalizedEvents[
+      events[
         event.id
       ] = {
-        match: Math.max(
-          1,
-          oldEvent?.match ??
-            (event.id ===
-            "street"
-              ? saved.street
-                  ?.match
-              : 1) ??
-            1
-        ),
+        ...events[
+          event.id
+        ],
 
-        currency:
-          Math.max(
-            0,
-            oldEvent
-              ?.currency ??
-              (event.id ===
-              "street"
-                ? saved.street
-                    ?.streetCoins
-                : 0) ??
-              0
-          ),
-
-        completed:
-          Boolean(
-            oldEvent
-              ?.completed ??
-              (event.id ===
-              "street"
-                ? saved.street
-                    ?.completed
-                : false)
-          ),
+        ...(old || {}),
 
         shop:
           Array.isArray(
-            oldEvent?.shop
+            old?.shop
           ) &&
-          oldEvent.shop
-            .length
-            ? oldEvent.shop
-            : event.id ===
-                  "street" &&
-                Array.isArray(
-                  saved.streetShop
-                ) &&
-                saved
-                  .streetShop
-                  .length
-              ? saved.streetShop
-              : generateEventShop(
-                  event,
-                  index
-                ),
+          old.shop.length
+            ? old.shop
+            : generateEventShop(
+                event,
+                index
+              ),
       };
     }
   );
 
+  const collection =
+    Array.isArray(
+      saved.collection
+    )
+      ? saved.collection.map(
+          (player) => ({
+            ...player,
+
+            country:
+              player.country ||
+              "TR",
+
+            positionGroup:
+              player.positionGroup ||
+              getPositionGroup(
+                player.position
+              ),
+
+            sold:
+              Boolean(
+                player.sold
+              ),
+          })
+        )
+      : [];
+
   return {
     ...blank,
     ...saved,
+
     saveVersion:
       SAVE_VERSION,
 
-    collection:
-      Array.isArray(
-        saved.collection
-      )
-        ? saved.collection
-        : [],
+    collection,
 
-    squad:
-      Array.isArray(
-        saved.squad
-      )
-        ? saved.squad
-        : [],
+    events,
 
     market:
       Array.isArray(
@@ -443,19 +1331,66 @@ function normalizeGame(saved) {
         ? saved.market
         : [],
 
-    marketCap:
-      Number(
-        saved.marketCap
-      ) ||
-      Number(
-        saved.trainingCap
-      ) ||
-      30,
+    formation:
+      saved.formation ||
+      {},
 
-    trainingCap:
-      Number(
-        saved.trainingCap
-      ) || 30,
+    upgradePacks: {
+      ...blank.upgradePacks,
+      ...(saved.upgradePacks ||
+        {}),
+    },
+
+    career: {
+      ...blank.career,
+      ...(saved.career ||
+        {}),
+    },
+
+    daily: {
+      ...blank.daily,
+      ...(saved.daily ||
+        {}),
+    },
+
+    profile: {
+      ...blank.profile,
+      ...(saved.profile ||
+        {}),
+
+      notifications: {
+        ...blank.profile
+          .notifications,
+        ...(saved.profile
+          ?.notifications ||
+          {}),
+      },
+    },
+
+    rentalCenter: {
+      ...blank.rentalCenter,
+      ...(saved.rentalCenter ||
+        {}),
+    },
+
+    coaches: {
+      ...blank.coaches,
+      ...(saved.coaches ||
+        {}),
+    },
+
+    stats: {
+      ...blank.stats,
+      ...(saved.stats ||
+        {}),
+    },
+
+    stageRewardsClaimed:
+      Array.isArray(
+        saved.stageRewardsClaimed
+      )
+        ? saved.stageRewardsClaimed
+        : [],
 
     redeemedCoupons:
       Array.isArray(
@@ -470,27 +1405,6 @@ function normalizeGame(saved) {
       )
         ? saved.storePurchases
         : [],
-
-    events:
-      normalizedEvents,
-
-    career: {
-      ...blank.career,
-      ...(saved.career ||
-        {}),
-    },
-
-    daily: {
-      ...blank.daily,
-      ...(saved.daily ||
-        {}),
-      lastClaim:
-        saved.daily
-          ?.lastClaim ||
-        saved
-          .lastDailyReward ||
-        "",
-    },
   };
 }
 
@@ -503,10 +1417,7 @@ function averageOverall(
 
   return Math.round(
     players.reduce(
-      (
-        sum,
-        player
-      ) =>
+      (sum, player) =>
         sum +
         player.overall,
       0
@@ -514,125 +1425,15 @@ function averageOverall(
   );
 }
 
-function randomFive(
-  players
-) {
-  return shuffle(
-    players
-  ).slice(0, 5);
-}
-
-function formatTime(
-  milliseconds
-) {
-  if (
-    milliseconds <= 0
-  ) {
-    return "00:00:00";
-  }
-
-  const totalSeconds =
-    Math.floor(
-      milliseconds /
-        1000
-    );
-
-  const hours =
-    Math.floor(
-      totalSeconds /
-        3600
-    );
-
-  const minutes =
-    Math.floor(
-      (totalSeconds %
-        3600) /
-        60
-    );
-
-  const seconds =
-    totalSeconds % 60;
-
-  return [
-    hours,
-    minutes,
-    seconds,
-  ]
-    .map((value) =>
-      String(
-        value
-      ).padStart(
-        2,
-        "0"
-      )
-    )
-    .join(":");
-}
-
-function localDateKey(
-  date = new Date()
-) {
-  const year =
-    date.getFullYear();
-
-  const month =
-    String(
-      date.getMonth() +
-        1
-    ).padStart(2, "0");
-
-  const day =
-    String(
-      date.getDate()
-    ).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-function dateKeyToNumber(
-  key
-) {
-  if (!key) {
-    return null;
-  }
-
-  const [
-    year,
-    month,
-    day,
-  ] = key
-    .split("-")
-    .map(Number);
-
-  if (
-    !year ||
-    !month ||
-    !day
-  ) {
-    return null;
-  }
-
-  return Math.floor(
-    Date.UTC(
-      year,
-      month - 1,
-      day
-    ) / 86400000
-  );
-}
-
 function calculateSellPrice(
   player
 ) {
-  const fullPrice =
-    calculatePlayerPrice(
-      player.overall
-    );
-
   return Math.max(
     50,
     Math.floor(
-      fullPrice * 0.6
+      calculatePlayerPrice(
+        player.overall
+      ) * 0.6
     )
   );
 }
@@ -652,20 +1453,17 @@ function calculateSpeedUpCost(
         now
     );
 
-  if (!remaining) {
-    return 0;
-  }
-
-  const quarterHours =
+  const blocks =
     Math.ceil(
       remaining /
-        (15 * 60 *
+        (15 *
+          60 *
           1000)
     );
 
   return Math.max(
-    50,
-    quarterHours * 60
+    100,
+    blocks * 100
   );
 }
 
@@ -693,14 +1491,41 @@ function App() {
   );
 
   const [
-    battle,
-    setBattle,
-  ] = useState(null);
+    game,
+    setGame,
+  ] = useState(() => {
+    try {
+      const saved =
+        localStorage.getItem(
+          SAVE_KEY
+        );
 
-  const [
-    activeEventId,
-    setActiveEventId,
-  ] = useState("street");
+      if (saved) {
+        return normalizeGame(
+          JSON.parse(
+            saved
+          )
+        );
+      }
+
+      const old =
+        localStorage.getItem(
+          "soccer-cards-war-save-v4"
+        );
+
+      if (old) {
+        return normalizeGame(
+          JSON.parse(
+            old
+          )
+        );
+      }
+    } catch {
+      //
+    }
+
+    return createBlankGame();
+  });
 
   const [
     clubNameInput,
@@ -718,8 +1543,33 @@ function App() {
   ] = useState("ST");
 
   const [
-    trainingPlayerId,
-    setTrainingPlayerId,
+    customCountry,
+    setCustomCountry,
+  ] = useState("TR");
+
+  const [
+    selectedTeamPlayer,
+    setSelectedTeamPlayer,
+  ] = useState(null);
+
+  const [
+    selectedTrainingPlayer,
+    setSelectedTrainingPlayer,
+  ] = useState(null);
+
+  const [
+    activeEventId,
+    setActiveEventId,
+  ] = useState("street");
+
+  const [
+    battle,
+    setBattle,
+  ] = useState(null);
+
+  const [
+    purchaseModal,
+    setPurchaseModal,
   ] = useState(null);
 
   const [
@@ -728,76 +1578,37 @@ function App() {
   ] = useState("");
 
   const [
-    installPrompt,
-    setInstallPrompt,
-  ] = useState(null);
-
-  const [
     installed,
     setInstalled,
   ] = useState(() => {
-    if (
-      typeof window ===
-      "undefined"
-    ) {
-      return false;
-    }
-
-    return (
+    return Boolean(
       window.matchMedia?.(
         "(display-mode: standalone)"
       )?.matches ||
-      window.navigator
-        .standalone ===
-        true
+        window.navigator
+          .standalone ===
+          true
     );
   });
 
   const [
-    game,
-    setGame,
-  ] = useState(() => {
-    try {
-      const saved =
-        localStorage.getItem(
-          SAVE_KEY
-        );
-
-      if (saved) {
-        return normalizeGame(
-          JSON.parse(saved)
-        );
-      }
-
-      const older =
-        localStorage.getItem(
-          "soccer-cards-war-save-v2"
-        );
-
-      if (older) {
-        return normalizeGame(
-          JSON.parse(older)
-        );
-      }
-    } catch {
-      // Bozuk kayıt varsa
-      // yeni oyun açılır.
-    }
-
-    return createBlankGame();
-  });
+    installPrompt,
+    setInstallPrompt,
+  ] = useState(null);
 
   useEffect(() => {
     localStorage.setItem(
       SAVE_KEY,
-      JSON.stringify(game)
+      JSON.stringify(
+        game
+      )
     );
   }, [game]);
 
   useEffect(() => {
     if (
       document.getElementById(
-        "scw-extra-ui-styles"
+        "scw-v2-styles"
       )
     ) {
       return;
@@ -809,71 +1620,14 @@ function App() {
       );
 
     style.id =
-      "scw-extra-ui-styles";
+      "scw-v2-styles";
 
     style.textContent =
-      EXTRA_UI_CSS;
+      APP_CSS;
 
     document.head.appendChild(
       style
     );
-  }, []);
-
-  useEffect(() => {
-    const currentState =
-      window.history.state;
-
-    if (
-      !currentState?.scw
-    ) {
-      window.history.replaceState(
-        HOME_HISTORY,
-        "",
-        window.location.href
-      );
-    }
-
-    function handlePopState(
-      event
-    ) {
-      const state =
-        event.state;
-
-      setBattle(null);
-
-      if (
-        state?.scw &&
-        state.view ===
-          "screen" &&
-        state.screen
-      ) {
-        setScreen(
-          state.screen
-        );
-
-        return;
-      }
-
-      if (
-        state?.scw &&
-        state.view ===
-          "home"
-      ) {
-        setScreen("home");
-      }
-    }
-
-    window.addEventListener(
-      "popstate",
-      handlePopState
-    );
-
-    return () => {
-      window.removeEventListener(
-        "popstate",
-        handlePopState
-      );
-    };
   }, []);
 
   useEffect(() => {
@@ -885,13 +1639,54 @@ function App() {
       }, 1000);
 
     return () =>
-      clearInterval(timer);
+      clearInterval(
+        timer
+      );
   }, []);
 
   useEffect(() => {
-    const handleInstallPrompt =
+    const timer =
+      setInterval(() => {
+        if (
+          document.visibilityState !==
+          "visible"
+        ) {
+          return;
+        }
+
+        if (
+          !game.clubName
+        ) {
+          return;
+        }
+
+        setGame(
+          (previous) => ({
+            ...previous,
+
+            profile: {
+              ...previous.profile,
+
+              playSeconds:
+                (previous.profile
+                  ?.playSeconds ||
+                  0) + 1,
+            },
+          })
+        );
+      }, 1000);
+
+    return () =>
+      clearInterval(
+        timer
+      );
+  }, [game.clubName]);
+
+  useEffect(() => {
+    const handlePrompt =
       (event) => {
         event.preventDefault();
+
         setInstallPrompt(
           event
         );
@@ -899,18 +1694,20 @@ function App() {
 
     const handleInstalled =
       () => {
+        setInstalled(true);
+
         setInstallPrompt(
           null
         );
-        setInstalled(true);
-        setNotice(
-          "Soccer Cards War telefona kuruldu."
+
+        showNotice(
+          "Soccer Cards War kuruldu."
         );
       };
 
     window.addEventListener(
       "beforeinstallprompt",
-      handleInstallPrompt
+      handlePrompt
     );
 
     window.addEventListener(
@@ -921,7 +1718,7 @@ function App() {
     return () => {
       window.removeEventListener(
         "beforeinstallprompt",
-        handleInstallPrompt
+        handlePrompt
       );
 
       window.removeEventListener(
@@ -933,10 +1730,59 @@ function App() {
 
   useEffect(() => {
     if (
-      !game.training ||
+      !window.history.state
+        ?.scw
+    ) {
+      window.history.replaceState(
+        HOME_HISTORY,
+        "",
+        window.location.href
+      );
+    }
+
+    const handlePop =
+      (event) => {
+        setBattle(null);
+
+        const state =
+          event.state;
+
+        if (
+          state?.scw &&
+          state.view ===
+            "screen"
+        ) {
+          setScreen(
+            state.screen
+          );
+          return;
+        }
+
+        setScreen("home");
+      };
+
+    window.addEventListener(
+      "popstate",
+      handlePop
+    );
+
+    return () =>
+      window.removeEventListener(
+        "popstate",
+        handlePop
+      );
+  }, []);
+
+  useEffect(() => {
+    if (
+      !game.training
+    ) {
+      return;
+    }
+
+    if (
       now <
-        game.training
-          .endsAt
+      game.training.endsAt
     ) {
       return;
     }
@@ -944,55 +1790,250 @@ function App() {
     const training =
       game.training;
 
-    const currentPlayer =
-      game.collection.find(
-        (player) =>
-          player.id ===
-          training.playerId
-      );
+    setGame(
+      (previous) => {
+        const player =
+          previous.collection.find(
+            (item) =>
+              item.id ===
+              training.playerId
+          );
 
-    if (!currentPlayer) {
-      setGame(
-        (previous) => ({
+        if (!player) {
+          return {
+            ...previous,
+            training: null,
+          };
+        }
+
+        const gain =
+          Math.max(
+            0,
+            Math.min(
+              training.gain,
+              previous.trainingCap -
+                player.overall
+            )
+          );
+
+        return {
           ...previous,
-          training: null,
-        })
-      );
 
+          collection:
+            previous.collection.map(
+              (item) => {
+                if (
+                  item.id !==
+                  player.id
+                ) {
+                  return item;
+                }
+
+                const overall =
+                  Math.min(
+                    99,
+                    item.overall +
+                      gain
+                  );
+
+                return {
+                  ...item,
+                  overall,
+                  rarity:
+                    getRarity(
+                      overall
+                    ),
+                };
+              }
+            ),
+
+          training: null,
+        };
+      }
+    );
+
+    if (
+      game.profile
+        ?.notifications
+        ?.training
+    ) {
+      showNotice(
+        "🏋️ Antrenman tamamlandı."
+      );
+    }
+  }, [
+    now,
+    game.training,
+    game.profile,
+  ]);
+
+  useEffect(() => {
+    const finished =
+      game.rentalCenter
+        ?.rentals?.filter(
+          (rental) =>
+            !rental.finished &&
+            now >=
+              rental.endsAt
+        ) || [];
+
+    if (
+      !finished.length
+    ) {
       return;
     }
 
-    const availableGain =
-      Math.max(
-        0,
-        game.trainingCap -
-          currentPlayer
-            .overall
-      );
+    setGame(
+      (previous) => {
+        let added = 0;
 
-    const actualGain =
-      Math.min(
-        training.gain,
-        availableGain
+        const rentals =
+          previous.rentalCenter
+            .rentals.map(
+              (rental) => {
+                if (
+                  rental.finished ||
+                  now <
+                    rental.endsAt
+                ) {
+                  return rental;
+                }
+
+                const player =
+                  previous.collection.find(
+                    (item) =>
+                      item.id ===
+                      rental.playerId
+                  );
+
+                const income =
+                  player
+                    ? calculateRentalIncome(
+                        player.overall,
+                        rental.endsAt -
+                          rental.startedAt
+                      )
+                    : 0;
+
+                added += income;
+
+                return {
+                  ...rental,
+                  finished: true,
+                  earned: income,
+                };
+              }
+            );
+
+        return {
+          ...previous,
+
+          rentalCenter: {
+            ...previous.rentalCenter,
+
+            rentals,
+
+            pendingCoins:
+              previous
+                .rentalCenter
+                .pendingCoins +
+              added,
+
+            lifetimeCoins:
+              previous
+                .rentalCenter
+                .lifetimeCoins +
+              added,
+
+            completedRentals:
+              previous
+                .rentalCenter
+                .completedRentals +
+              finished.length,
+          },
+        };
+      }
+    );
+
+    if (
+      game.profile
+        ?.notifications
+        ?.rental
+    ) {
+      showNotice(
+        "🤝 Kiradaki oyuncuların geri döndü."
       );
+    }
+  }, [
+    now,
+    game.rentalCenter,
+    game.profile,
+  ]);
+
+  useEffect(() => {
+    const finished =
+      game.coaches
+        ?.activeSessions?.filter(
+          (session) =>
+            !session.finished &&
+            now >=
+              session.endsAt
+        ) || [];
+
+    if (
+      !finished.length
+    ) {
+      return;
+    }
 
     setGame(
-      (previous) => ({
-        ...previous,
+      (previous) => {
+        let totalGain = 0;
 
-        collection:
+        const finishedIds =
+          new Set(
+            finished.map(
+              (item) =>
+                item.id
+            )
+          );
+
+        const affectedIds =
+          new Set(
+            finished.flatMap(
+              (item) =>
+                item.playerIds ||
+                []
+            )
+          );
+
+        const collection =
           previous.collection.map(
             (player) => {
               if (
-                player.id !==
-                training.playerId
+                !affectedIds.has(
+                  player.id
+                )
               ) {
                 return player;
               }
 
+              if (
+                player.overall >=
+                previous.trainingCap
+              ) {
+                return player;
+              }
+
+              totalGain += 1;
+
               const overall =
-                player.overall +
-                actualGain;
+                Math.min(
+                  99,
+                  previous.trainingCap,
+                  player.overall +
+                    1
+                );
 
               return {
                 ...player,
@@ -1003,121 +2044,134 @@ function App() {
                   ),
               };
             }
-          ),
+          );
 
-        training: null,
-      })
+        return {
+          ...previous,
+
+          collection,
+
+          coaches: {
+            ...previous.coaches,
+
+            totalGains:
+              previous.coaches
+                .totalGains +
+              totalGain,
+
+            activeSessions:
+              previous.coaches
+                .activeSessions.map(
+                  (session) =>
+                    finishedIds.has(
+                      session.id
+                    )
+                      ? {
+                          ...session,
+                          finished: true,
+                        }
+                      : session
+                ),
+          },
+        };
+      }
     );
 
-    setNotice(
-      actualGain > 0
-        ? `${currentPlayer.name} antrenmanı tamamladı. +${actualGain} GEN`
-        : `${currentPlayer.name} mevcut gelişim sınırına ulaştı.`
+    showNotice(
+      "⭐ Antrenör çalışması tamamlandı."
     );
   }, [
     now,
-    game.training,
-    game.collection,
-    game.trainingCap,
+    game.coaches,
   ]);
-
-  const squadPlayers =
-    useMemo(
-      () =>
-        game.squad
-          .map((id) =>
-            game.collection.find(
-              (player) =>
-                player.id ===
-                id
-            )
-          )
-          .filter(Boolean),
-      [
-        game.squad,
-        game.collection,
-      ]
-    );
-
-  const teamOverall =
-    useMemo(
-      () =>
-        averageOverall(
-          squadPlayers
-        ),
-      [squadPlayers]
-    );
-
-  const trainingPlayer =
-    game.collection.find(
-      (player) =>
-        player.id ===
-        trainingPlayerId
-    );
 
   const activeEvent =
     getEventConfig(
       activeEventId
     );
 
-  const activeEventIndex =
-    eventConfigs.findIndex(
-      (event) =>
-        event.id ===
-        activeEventId
-    );
-
-  const activeEventState =
-    game.events[
+  const currentEventState =
+    game.events?.[
       activeEventId
-    ] || {
-      match: 1,
-      currency: 0,
-      completed: false,
-      shop: [],
-    };
+    ];
 
-  const trainingSpeedCost =
-    calculateSpeedUpCost(
-      game.training,
-      now
+  const stageCap =
+    eventConfigs[
+      Math.max(
+        0,
+        game.activeStage -
+          1
+      )
+    ]?.playCap || 99;
+
+  const ownedPlayers =
+    useMemo(
+      () =>
+        game.collection.filter(
+          (player) =>
+            !player.sold
+        ),
+      [game.collection]
     );
+
+  const usablePlayers =
+    useMemo(
+      () =>
+        getActivePlayers(
+          game,
+          stageCap
+        ),
+      [
+        game,
+        stageCap,
+      ]
+    );
+
+  const formationPlayers =
+    useMemo(() => {
+      return TEAM_SLOTS.map(
+        (slot) => {
+          const playerId =
+            game.formation?.[
+              slot.id
+            ];
+
+          const player =
+            game.collection.find(
+              (item) =>
+                item.id ===
+                playerId
+            );
+
+          return {
+            slot,
+            player,
+          };
+        }
+      );
+    }, [
+      game.formation,
+      game.collection,
+    ]);
 
   function showNotice(
     message
   ) {
-    setNotice(message);
+    setNotice(
+      message
+    );
   }
 
   function openScreen(
-    nextScreen
+    next
   ) {
-    setBattle(null);
-    setScreen(
-      nextScreen
-    );
+    setScreen(next);
 
     window.history.pushState(
       {
         scw: true,
         view: "screen",
-        screen:
-          nextScreen,
-      },
-      "",
-      window.location.href
-    );
-  }
-
-  function pushBattleHistory(
-    parentScreen
-  ) {
-    window.history.pushState(
-      {
-        scw: true,
-        view: "battle",
-        parent:
-          parentScreen,
+        screen: next,
       },
       "",
       window.location.href
@@ -1125,103 +2179,9 @@ function App() {
   }
 
   function goHome() {
-    if (battle) {
-      const state =
-        window.history.state;
-
-      if (
-        state?.scw &&
-        state.view ===
-          "battle"
-      ) {
-        window.history.go(
-          -2
-        );
-        return;
-      }
-    }
-
-    if (
-      screen !== "home"
-    ) {
-      const state =
-        window.history.state;
-
-      if (
-        state?.scw &&
-        state.view ===
-          "screen"
-      ) {
-        window.history.back();
-        return;
-      }
-    }
-
     setBattle(null);
+
     setScreen("home");
-
-    window.history.replaceState(
-      HOME_HISTORY,
-      "",
-      window.location.href
-    );
-  }
-
-  function isEventUnlocked(
-    eventIndex
-  ) {
-    if (
-      eventIndex === 0
-    ) {
-      return true;
-    }
-
-    return Boolean(
-      game.events[
-        eventConfigs[
-          eventIndex - 1
-        ].id
-      ]?.completed
-    );
-  }
-
-  function resetGame() {
-    const confirmed =
-      window.confirm(
-        "Tüm Soccer Cards War ilerlemen silinecek. Emin misin?"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    localStorage.removeItem(
-      SAVE_KEY
-    );
-
-    localStorage.removeItem(
-      "soccer-cards-war-save-v2"
-    );
-
-    setGame(
-      createBlankGame()
-    );
-    setStarted(false);
-    setScreen("home");
-    setBattle(null);
-    setClubNameInput("");
-    setCustomName("");
-    setCustomPosition(
-      "ST"
-    );
-    setTrainingPlayerId(
-      null
-    );
-    setCouponInput("");
-    setActiveEventId(
-      "street"
-    );
-    setNotice("");
 
     window.history.replaceState(
       HOME_HISTORY,
@@ -1231,12 +2191,12 @@ function App() {
   }
 
   function createClub() {
-    const cleanName =
+    const clean =
       clubNameInput.trim();
 
-    if (!cleanName) {
+    if (!clean) {
       showNotice(
-        "Önce kulübüne bir isim ver."
+        "Kulübüne isim ver."
       );
       return;
     }
@@ -1246,919 +2206,452 @@ function App() {
         10
       );
 
-    const events =
-      createEventStates(
-        true
+    const formation =
+      buildInitialFormation(
+        starters
       );
 
     setGame({
       ...createBlankGame(),
-      clubName:
-        cleanName,
+
+      clubName: clean,
+
       collection:
         starters,
+
       squad:
         starters.map(
           (player) =>
             player.id
         ),
+
+      formation,
+
       market:
         generateMarketPlayers(
           6,
-          30
+          25
         ),
-      events,
+
+      events:
+        createEventStates(
+          true
+        ),
     });
+
+    setStarted(true);
+  }
+
+  function resetGame() {
+    const first =
+      window.confirm(
+        "Tüm ilerlemen silinecek. Devam etmek istiyor musun?"
+      );
+
+    if (!first) {
+      return;
+    }
+
+    const second =
+      window.confirm(
+        "Bu işlem geri alınamaz. EVET diyorsan OK'e bas."
+      );
+
+    if (!second) {
+      return;
+    }
+
+    localStorage.removeItem(
+      SAVE_KEY
+    );
+
+    setGame(
+      createBlankGame()
+    );
+
+    setStarted(false);
 
     setScreen("home");
 
-    window.history.replaceState(
-      HOME_HISTORY,
-      "",
-      window.location.href
-    );
-
-    showNotice(
-      `${cleanName} kuruldu. İlk 10 futbolcun hazır.`
-    );
+    setBattle(null);
   }
 
-  function toggleSquadPlayer(
-    playerId
+  function placePlayer(
+    slot
   ) {
+    if (
+      !selectedTeamPlayer
+    ) {
+      return;
+    }
+
+    const player =
+      game.collection.find(
+        (item) =>
+          item.id ===
+          selectedTeamPlayer
+      );
+
+    if (!player) {
+      return;
+    }
+
+    if (
+      player.sold ||
+      isPlayerBusy(
+        player,
+        game
+      )
+    ) {
+      showNotice(
+        "Bu oyuncu şu anda kullanılamıyor."
+      );
+      return;
+    }
+
+    const group =
+      player.positionGroup ||
+      getPositionGroup(
+        player.position
+      );
+
+    if (
+      group !== slot.group
+    ) {
+      showNotice(
+        `Bu slota sadece ${positionGroups[
+          slot.group
+        ].name} oyuncusu koyabilirsin.`
+      );
+      return;
+    }
+
+    if (
+      player.overall >
+        stageCap &&
+      player.overall !==
+        100
+    ) {
+      showNotice(
+        `Bu aşamada maksimum ${stageCap} GEN oyuncu kullanılabilir.`
+      );
+      return;
+    }
+
     setGame(
       (previous) => {
-        if (
-          previous.squad.includes(
-            playerId
-          )
-        ) {
-          return {
-            ...previous,
-            squad:
-              previous.squad.filter(
-                (id) =>
-                  id !==
-                  playerId
-              ),
-          };
-        }
+        const formation = {
+          ...previous.formation,
+        };
 
-        if (
-          previous.squad
-            .length >= 10
-        ) {
-          showNotice(
-            "Maç desten dolu. Önce bir futbolcuyu çıkar."
-          );
-          return previous;
-        }
+        Object.keys(
+          formation
+        ).forEach(
+          (key) => {
+            if (
+              formation[key] ===
+              player.id
+            ) {
+              delete formation[
+                key
+              ];
+            }
+          }
+        );
+
+        formation[
+          slot.id
+        ] = player.id;
 
         return {
           ...previous,
-          squad: [
-            ...previous.squad,
-            playerId,
-          ],
+          formation,
+        };
+      }
+    );
+
+    setSelectedTeamPlayer(
+      null
+    );
+  }
+
+  function removeSlot(
+    slotId
+  ) {
+    setGame(
+      (previous) => {
+        const formation = {
+          ...previous.formation,
+        };
+
+        delete formation[
+          slotId
+        ];
+
+        return {
+          ...previous,
+          formation,
         };
       }
     );
   }
 
-  async function installApp() {
-    if (installed) {
-      showNotice(
-        "Uygulama zaten kurulu."
-      );
-      return;
-    }
+  function getFormationDeck() {
+    return TEAM_SLOTS.map(
+      (slot) => {
+        const id =
+          game.formation?.[
+            slot.id
+          ];
 
-    if (!installPrompt) {
-      showNotice(
-        "Yükle seçeneği henüz hazır değil. Sayfada biraz kaldıktan sonra tekrar dene veya tarayıcı menüsündeki Yükle seçeneğini kullan."
-      );
-      return;
-    }
-
-    await installPrompt.prompt();
-
-    const choice =
-      await installPrompt
-        .userChoice;
-
-    if (
-      choice.outcome ===
-      "accepted"
-    ) {
-      setInstallPrompt(
-        null
-      );
-    }
+        return game.collection.find(
+          (player) =>
+            player.id === id
+        );
+      }
+    ).filter(Boolean);
   }
 
-  function collectDailyReward() {
-    const today =
-      localDateKey();
+  function validateFormation() {
+    const deck =
+      getFormationDeck();
+
+    const result =
+      getSquadProblems(
+        deck
+      );
 
     if (
-      game.daily
-        .lastClaim ===
-      today
+      deck.length !==
+      10 ||
+      !result.valid
     ) {
-      showNotice(
-        "Bugünkü günlük ödülünü zaten aldın."
-      );
-      return;
+      return {
+        valid: false,
+        message:
+          "Takımın 2 Forvet, 3 Orta Saha, 4 Defans ve 1 Kaleciden oluşmalı.",
+      };
     }
 
-    const todayNumber =
-      dateKeyToNumber(
-        today
-      );
-
-    const previousNumber =
-      dateKeyToNumber(
-        game.daily
-          .lastClaim
-      );
-
-    const consecutive =
-      previousNumber !==
-        null &&
-      todayNumber -
-        previousNumber ===
-        1;
-
-    const newStreak =
-      consecutive
-        ? (game.daily
-            .streak %
-            7) +
-          1
-        : 1;
-
-    const coinRewards = [
-      300,
-      400,
-      500,
-      650,
-      800,
-      1000,
-      0,
-    ];
-
-    const coinReward =
-      coinRewards[
-        newStreak - 1
-      ];
-
-    let playerReward =
-      null;
-
-    if (
-      newStreak === 7
-    ) {
-      const max =
-        Math.min(
-          99,
-          Math.max(
-            22,
-            game.marketCap
+    const busy =
+      deck.find(
+        (player) =>
+          isPlayerBusy(
+            player,
+            game
           )
+      );
+
+    if (busy) {
+      return {
+        valid: false,
+        message: `${busy.name} şu anda antrenmanda veya kiralıkta. Yerine başka oyuncu koy.`,
+      };
+    }
+
+    const overCap =
+      deck.find(
+        (player) =>
+          player.overall >
+            stageCap &&
+          player.overall !==
+            100
+      );
+
+    if (overCap) {
+      return {
+        valid: false,
+        message: `${overCap.name} bu aşamanın GEN sınırını aşıyor.`,
+      };
+    }
+
+    return {
+      valid: true,
+      deck,
+    };
+  }
+
+  function createBattle(
+    mode
+  ) {
+    const formation =
+      validateFormation();
+
+    if (
+      !formation.valid
+    ) {
+      showNotice(
+        formation.message
+      );
+      return;
+    }
+
+    if (
+      mode === "career"
+    ) {
+      const careerCheck =
+        canStartCareer(
+          game,
+          stageCap
         );
 
-      const min =
-        Math.max(
-          15,
-          max - 8
+      if (
+        !careerCheck.allowed
+      ) {
+        showNotice(
+          careerCheck.message
+        );
+        return;
+      }
+    }
+
+    if (
+      mode === "event"
+    ) {
+      const eventCheck =
+        canStartEvent(
+          game,
+          stageCap
         );
 
-      playerReward =
-        generatePlayer(
-          min,
-          max
+      if (
+        !eventCheck.allowed
+      ) {
+        showNotice(
+          eventCheck.message
         );
-    }
-
-    setGame(
-      (previous) => ({
-        ...previous,
-        coins:
-          previous.coins +
-          coinReward,
-        collection:
-          playerReward
-            ? [
-                ...previous.collection,
-                playerReward,
-              ]
-            : previous.collection,
-        daily: {
-          lastClaim:
-            today,
-          streak:
-            newStreak,
-        },
-      })
-    );
-
-    showNotice(
-      playerReward
-        ? `7. gün ödülü: ${playerReward.overall} GEN ${playerReward.name}`
-        : `Günlük ödül: +${coinReward} Coin • Seri ${newStreak}/7`
-    );
-  }
-
-  function refreshMarket() {
-    if (
-      game.coins < 100
-    ) {
-      showNotice(
-        "Transfer listesini yenilemek için 100 Coin gerekiyor."
-      );
-      return;
-    }
-
-    setGame(
-      (previous) => ({
-        ...previous,
-        coins:
-          previous.coins -
-          100,
-        market:
-          generateMarketPlayers(
-            6,
-            previous.marketCap
-          ),
-      })
-    );
-
-    showNotice(
-      "Transfer listesi yenilendi."
-    );
-  }
-
-  function buyMarketPlayer(
-    playerId
-  ) {
-    const player =
-      game.market.find(
-        (item) =>
-          item.id ===
-          playerId
-      );
-
-    if (!player) {
-      return;
-    }
-
-    if (
-      game.coins <
-      player.price
-    ) {
-      showNotice(
-        "Bu futbolcu için yeterli Coin yok."
-      );
-      return;
-    }
-
-    setGame(
-      (previous) => ({
-        ...previous,
-        coins:
-          previous.coins -
-          player.price,
-        collection: [
-          ...previous.collection,
-          {
-            ...player,
-            price:
-              undefined,
-          },
-        ],
-        market:
-          previous.market.filter(
-            (item) =>
-              item.id !==
-              playerId
-          ),
-      })
-    );
-
-    showNotice(
-      `${player.name} kulübüne katıldı.`
-    );
-  }
-
-  function sellOwnedPlayer(
-    playerId
-  ) {
-    const player =
-      game.collection.find(
-        (item) =>
-          item.id ===
-          playerId
-      );
-
-    if (!player) {
-      return;
-    }
-
-    if (
-      game.training
-        ?.playerId ===
-      playerId
-    ) {
-      showNotice(
-        "Antrenmanda olan oyuncuyu satamazsın. Önce antrenmanın bitmesini bekle."
-      );
-      return;
-    }
-
-    const sellPrice =
-      calculateSellPrice(
-        player
-      );
-
-    const confirmed =
-      window.confirm(
-        `${player.name} (${player.overall} GEN) ${sellPrice.toLocaleString()} Coin karşılığında satılsın mı?`
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setGame(
-      (previous) => ({
-        ...previous,
-        coins:
-          previous.coins +
-          sellPrice,
-        collection:
-          previous.collection.filter(
-            (item) =>
-              item.id !==
-              playerId
-          ),
-        squad:
-          previous.squad.filter(
-            (id) =>
-              id !==
-              playerId
-          ),
-      })
-    );
-
-    if (
-      trainingPlayerId ===
-      playerId
-    ) {
-      setTrainingPlayerId(
-        null
-      );
-    }
-
-    showNotice(
-      `${player.name} satıldı. +${sellPrice.toLocaleString()} Coin`
-    );
-  }
-
-  function createMyPlayer() {
-    const name =
-      customName.trim();
-
-    if (!name) {
-      showNotice(
-        "Oyuncunun adını yaz."
-      );
-      return;
-    }
-
-    if (
-      game.coins < 750
-    ) {
-      showNotice(
-        "Kendi futbolcunu oluşturmak için 750 Coin gerekiyor."
-      );
-      return;
-    }
-
-    const player =
-      createCustomPlayer(
-        name,
-        customPosition
-      );
-
-    setGame(
-      (previous) => ({
-        ...previous,
-        coins:
-          previous.coins -
-          750,
-        collection: [
-          ...previous.collection,
-          player,
-        ],
-      })
-    );
-
-    setCustomName("");
-
-    showNotice(
-      `${player.name} oluşturuldu. 15 GEN'den başlıyor.`
-    );
-  }
-
-  function startTraining(
-    plan
-  ) {
-    if (!trainingPlayer) {
-      showNotice(
-        "Önce antrenman yapacak futbolcuyu seç."
-      );
-      return;
-    }
-
-    if (game.training) {
-      showNotice(
-        "Şu anda başka bir antrenman devam ediyor."
-      );
-      return;
-    }
-
-    if (
-      trainingPlayer
-        .overall >=
-      game.trainingCap
-    ) {
-      showNotice(
-        `${trainingPlayer.name} şu anki ${game.trainingCap} GEN gelişim sınırına ulaştı.`
-      );
-      return;
-    }
-
-    const cost =
-      calculateTrainingCost(
-        plan,
-        trainingPlayer
-          .overall
-      );
-
-    if (
-      game.coins < cost
-    ) {
-      showNotice(
-        "Bu antrenman için yeterli Coin yok."
-      );
-      return;
-    }
-
-    const startedAt =
-      Date.now();
-
-    const endsAt =
-      startedAt +
-      plan.hours *
-        60 *
-        60 *
-        1000;
-
-    setGame(
-      (previous) => ({
-        ...previous,
-        coins:
-          previous.coins -
-          cost,
-        training: {
-          playerId:
-            trainingPlayer.id,
-          playerName:
-            trainingPlayer.name,
-          startedAt,
-          endsAt,
-          gain:
-            plan.gain,
-          planName:
-            plan.title,
-        },
-      })
-    );
-
-    showNotice(
-      `${trainingPlayer.name}: ${plan.title} başladı.`
-    );
-  }
-
-  function speedUpTraining() {
-    if (!game.training) {
-      showNotice(
-        "Devam eden bir antrenman yok."
-      );
-      return;
-    }
-
-    const cost =
-      calculateSpeedUpCost(
-        game.training,
-        Date.now()
-      );
-
-    if (
-      cost <= 0
-    ) {
-      return;
-    }
-
-    if (
-      game.coins < cost
-    ) {
-      showNotice(
-        `Antrenmanı hemen bitirmek için ${cost.toLocaleString()} Coin gerekiyor.`
-      );
-      return;
-    }
-
-    const confirmed =
-      window.confirm(
-        `Antrenmanı ${cost.toLocaleString()} Coin ödeyerek hemen tamamlamak istiyor musun?`
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setGame(
-      (previous) => ({
-        ...previous,
-        coins:
-          previous.coins -
-          cost,
-        training: {
-          ...previous.training,
-          endsAt:
-            Date.now() - 1,
-        },
-      })
-    );
-
-    setNow(
-      Date.now()
-    );
-  }
-
-  function redeemCoupon() {
-    const code =
-      couponInput
-        .trim()
-        .toLowerCase();
-
-    if (!code) {
-      showNotice(
-        "Kupon kodunu yaz."
-      );
-      return;
-    }
-
-    if (
-      code !== "samsun"
-    ) {
-      showNotice(
-        "Geçersiz kupon kodu."
-      );
-      return;
-    }
-
-    if (
-      game.redeemedCoupons.includes(
-        "samsun"
-      )
-    ) {
-      showNotice(
-        "SAMSUN kuponu bu kayıtta zaten kullanıldı."
-      );
-      return;
-    }
-
-    setGame(
-      (previous) => ({
-        ...previous,
-        coins:
-          previous.coins +
-          100000,
-        redeemedCoupons: [
-          ...previous.redeemedCoupons,
-          "samsun",
-        ],
-      })
-    );
-
-    setCouponInput("");
-
-    showNotice(
-      "Kupon kabul edildi: +100.000 Coin"
-    );
-  }
-
-  function buyCoinPackage(
-    pack
-  ) {
-    if (
-      STORE_TEST_MODE
-    ) {
-      const confirmed =
-        window.confirm(
-          `TEST ÖDEME: ${pack.price} karşılığında ${pack.coins.toLocaleString()} Coin eklensin mi? Gerçek ücret alınmaz.`
-        );
-
-      if (!confirmed) {
         return;
       }
 
-      setGame(
-        (previous) => ({
-          ...previous,
-          coins:
-            previous.coins +
-            pack.coins,
-          storePurchases: [
-            ...previous.storePurchases,
-            {
-              id: `${pack.id}-${Date.now()}`,
-              packageId:
-                pack.id,
-              coins:
-                pack.coins,
-              price:
-                pack.price,
-              mode: "test",
-              purchasedAt:
-                Date.now(),
-            },
-          ],
-        })
-      );
+      const cooldown =
+        getEventCooldownRemaining(
+          currentEventState,
+          Date.now()
+        );
 
-      showNotice(
-        `[TEST] +${pack.coins.toLocaleString()} Coin eklendi.`
-      );
-      return;
+      if (
+        cooldown > 0
+      ) {
+        showNotice(
+          `Sonraki maça ${millisecondsToClock(
+            cooldown
+          )} kaldı.`
+        );
+        return;
+      }
     }
 
-    if (!pack.paymentUrl) {
-      showNotice(
-        "Canlı ödeme bağlantısı henüz eklenmedi."
-      );
-      return;
-    }
+    const deck =
+      formation.deck;
 
-    window.location.href =
-      pack.paymentUrl;
-  }
+    const stage =
+      game.activeStage;
 
-  function eventOpponentStrength(
-    event,
-    eventState
-  ) {
-    const progress =
-      event.matches <= 1
-        ? 1
-        : (eventState.match -
-            1) /
-          (event.matches -
-            1);
+    const target =
+      mode === "career"
+        ? Math.min(
+            99,
+            12 +
+              stage * 7 +
+              game.career
+                .match
+          )
+        : Math.min(
+            99,
+            activeEvent.min +
+              Math.floor(
+                (activeEvent.max -
+                  activeEvent.min) *
+                  ((currentEventState
+                    .match -
+                    1) /
+                    Math.max(
+                      1,
+                      activeEvent
+                        .matches -
+                        1
+                    ))
+              )
+          );
 
-    return Math.round(
-      event.min +
-        (event.max -
-          event.min) *
-          progress
-    );
-  }
-
-  function careerOpponentStrength() {
-    const league =
-      careerLeagues[
-        Math.min(
-          game.career
-            .leagueIndex,
-          careerLeagues.length -
-            1
-        )
-      ];
-
-    const progress =
-      league.matches <= 1
-        ? 1
-        : (game.career
-              .match -
-            1) /
-          (league.matches -
-            1);
-
-    return Math.round(
-      league.min +
-        (league.max -
-          league.min) *
-          progress
-    );
-  }
-
-  function buildBattle({
-    mode,
-    match,
-    target,
-    eventId = null,
-    leagueIndex = null,
-  }) {
     const opponentDeck =
       generateOpponentDeck(
         target,
         10
       );
 
-    const playerHand =
-      randomFive(
-        squadPlayers
-      );
-
-    const opponentHand =
-      randomFive(
-        opponentDeck
-      );
-
-    const playerHandIds =
-      playerHand.map(
-        (player) =>
-          player.id
-      );
-
-    const opponentHandIds =
-      opponentHand.map(
-        (player) =>
-          player.id
-      );
-
-    return {
+    setBattle({
       mode,
-      eventId,
-      leagueIndex,
-      phase: "playing",
-      match,
-      round: 0,
-      playerScore: 0,
-      opponentScore: 0,
-      playerDeck: [
-        ...squadPlayers,
-      ],
+
+      eventId:
+        mode === "event"
+          ? activeEventId
+          : null,
+
+      stage,
+
+      match:
+        mode === "career"
+          ? game.career.match
+          : currentEventState
+              .match,
+
+      playerDeck:
+        deck,
+
       opponentDeck,
-      playerHand,
-      opponentHand,
-      playerReserve:
-        squadPlayers.filter(
-          (player) =>
-            !playerHandIds.includes(
-              player.id
-            )
-        ),
-      opponentReserve:
-        opponentDeck.filter(
-          (player) =>
-            !opponentHandIds.includes(
-              player.id
-            )
-        ),
+
+      groupOrder:
+        MATCH_GROUP_ORDER,
+
+      round: 0,
+
+      playerScore: 0,
+
+      opponentScore: 0,
+
       usedPlayerIds: [],
-      history: [],
+
+      usedOpponentIds: [],
+
       reveal: null,
-      suddenChoices: [],
-      suddenOpponent: null,
+
+      phase: "playing",
+
       result: null,
-    };
+    });
   }
 
-  function startEventBattle(
-    eventId
-  ) {
-    const eventIndex =
-      eventConfigs.findIndex(
-        (event) =>
-          event.id ===
-          eventId
-      );
-
-    const event =
-      eventConfigs[
-        eventIndex
-      ];
-
-    const eventState =
-      game.events[
-        eventId
-      ];
-
-    if (
-      !isEventUnlocked(
-        eventIndex
-      )
-    ) {
-      showNotice(
-        "Bu etkinlik henüz kilitli."
-      );
-      return;
-    }
-
-    if (
-      eventState.completed
-    ) {
-      showNotice(
-        `${event.name} tamamlandı.`
-      );
-      return;
-    }
-
-    if (
-      squadPlayers.length !==
-      10
-    ) {
-      showNotice(
-        "Maça girmek için destende tam 10 kart olmalı."
-      );
-      return;
-    }
-
-    setBattle(
-      buildBattle({
-        mode: "event",
-        eventId,
-        match:
-          eventState.match,
-        target:
-          eventOpponentStrength(
-            event,
-            eventState
-          ),
-      })
-    );
-
-    pushBattleHistory(
-      "events"
-    );
-
-    setNotice("");
-  }
-
-  function startCareerBattle() {
-    if (
-      game.career
-        .completed
-    ) {
-      showNotice(
-        "Kariyer liglerinin tamamını bitirdin."
-      );
-      return;
-    }
-
-    if (
-      squadPlayers.length !==
-      10
-    ) {
-      showNotice(
-        "Kariyer maçına girmek için destende tam 10 kart olmalı."
-      );
-      return;
-    }
-
-    setBattle(
-      buildBattle({
-        mode: "career",
-        match:
-          game.career
-            .match,
-        target:
-          careerOpponentStrength(),
-        leagueIndex:
-          game.career
-            .leagueIndex,
-      })
-    );
-
-    pushBattleHistory(
-      "career"
-    );
-
-    setNotice("");
-  }
-
-  function playBattleCard(
+  function chooseBattlePlayer(
     player
   ) {
     if (
       !battle ||
       battle.phase !==
-        "playing" ||
-      battle.reveal
+        "playing"
     ) {
+      return;
+    }
+
+    const group =
+      battle.groupOrder[
+        battle.round
+      ];
+
+    const playerGroup =
+      player.positionGroup ||
+      getPositionGroup(
+        player.position
+      );
+
+    if (
+      playerGroup !== group
+    ) {
+      showNotice(
+        `Bu turda sadece ${positionGroups[
+          group
+        ].name} oynayabilirsin.`
+      );
       return;
     }
 
@@ -2170,495 +2663,626 @@ function App() {
       return;
     }
 
-    const opponentCard =
-      battle.opponentHand[
-        battle.round
-      ];
+    const opponentChoices =
+      battle.opponentDeck.filter(
+        (item) => {
+          const itemGroup =
+            item.positionGroup ||
+            getPositionGroup(
+              item.position
+            );
 
-    let result = "draw";
-
-    if (
-      player.overall >
-      opponentCard.overall
-    ) {
-      result = "win";
-    }
-
-    if (
-      player.overall <
-      opponentCard.overall
-    ) {
-      result = "loss";
-    }
-
-    setBattle(
-      (previous) => ({
-        ...previous,
-        playerScore:
-          previous.playerScore +
-          (result === "win"
-            ? 1
-            : 0),
-        opponentScore:
-          previous.opponentScore +
-          (result === "loss"
-            ? 1
-            : 0),
-        usedPlayerIds: [
-          ...previous.usedPlayerIds,
-          player.id,
-        ],
-        reveal: {
-          player,
-          opponent:
-            opponentCard,
-          result,
-        },
-        history: [
-          ...previous.history,
-          {
-            round:
-              previous.round +
-              1,
-            player,
-            opponent:
-              opponentCard,
-            result,
-          },
-        ],
-      })
-    );
-  }
-
-  function nextBattleRound() {
-    if (
-      !battle ||
-      !battle.reveal
-    ) {
-      return;
-    }
-
-    if (
-      battle.round < 4
-    ) {
-      setBattle(
-        (previous) => ({
-          ...previous,
-          round:
-            previous.round +
-            1,
-          reveal: null,
-        })
+          return (
+            itemGroup ===
+              group &&
+            !battle.usedOpponentIds.includes(
+              item.id
+            )
+          );
+        }
       );
-      return;
-    }
-
-    if (
-      battle.playerScore ===
-      battle.opponentScore
-    ) {
-      startSuddenDeath();
-      return;
-    }
-
-    finishBattle(
-      battle.playerScore >
-        battle.opponentScore,
-      false
-    );
-  }
-
-  function startSuddenDeath() {
-    setBattle(
-      (previous) => ({
-        ...previous,
-        phase: "sudden",
-        reveal: null,
-        suddenChoices:
-          shuffle(
-            previous.playerReserve
-          ).slice(0, 2),
-        suddenOpponent:
-          randomItem(
-            previous.opponentReserve
-          ),
-      })
-    );
-  }
-
-  function playSuddenCard(
-    player
-  ) {
-    if (
-      !battle ||
-      battle.phase !==
-        "sudden" ||
-      battle.reveal
-    ) {
-      return;
-    }
 
     const opponent =
-      battle.suddenOpponent;
+      randomItem(
+        opponentChoices
+      );
 
-    let won;
+    if (!opponent) {
+      return;
+    }
+
+    let playerScore =
+      battle.playerScore;
+
+    let opponentScore =
+      battle.opponentScore;
 
     if (
       player.overall >
       opponent.overall
     ) {
-      won = true;
+      playerScore += 1;
     } else if (
       player.overall <
       opponent.overall
     ) {
-      won = false;
-    } else {
-      const playerAverage =
-        averageOverall(
-          battle.playerDeck
-        );
-
-      const opponentAverage =
-        averageOverall(
-          battle.opponentDeck
-        );
-
-      won =
-        playerAverage ===
-        opponentAverage
-          ? Math.random() >=
-            0.5
-          : playerAverage >
-            opponentAverage;
+      opponentScore += 1;
     }
 
-    setBattle(
-      (previous) => ({
-        ...previous,
-        reveal: {
-          player,
-          opponent,
-          result:
-            won
-              ? "win"
-              : "loss",
-        },
-        result: {
-          sudden: true,
-          won,
-        },
-      })
-    );
+    const nextRound =
+      battle.round + 1;
+
+    const finished =
+      nextRound >=
+      battle.groupOrder
+        .length;
+
+    setBattle({
+      ...battle,
+
+      playerScore,
+
+      opponentScore,
+
+      round:
+        nextRound,
+
+      usedPlayerIds: [
+        ...battle.usedPlayerIds,
+        player.id,
+      ],
+
+      usedOpponentIds: [
+        ...battle.usedOpponentIds,
+        opponent.id,
+      ],
+
+      reveal: {
+        player,
+        opponent,
+      },
+
+      phase:
+        finished
+          ? "result-ready"
+          : "playing",
+    });
   }
 
-  function finishSuddenDeath() {
+  function settleBattle() {
     if (
-      !battle?.result
+      !battle ||
+      battle.phase !==
+        "result-ready"
     ) {
       return;
     }
 
-    finishBattle(
-      battle.result.won,
-      true
-    );
-  }
+    const win =
+      battle.playerScore >
+      battle.opponentScore;
 
-  function advanceCareer(
-    previous
-  ) {
-    const league =
-      careerLeagues[
-        previous.career
-          .leagueIndex
-      ];
-
-    const lastMatch =
-      previous.career
-        .match >=
-      league.matches;
-
-    const lastLeague =
-      previous.career
-        .leagueIndex >=
-      careerLeagues.length -
-        1;
-
-    if (
-      lastMatch &&
-      lastLeague
-    ) {
-      return {
-        ...previous.career,
-        wins:
-          previous.career
-            .wins + 1,
-        completed: true,
-      };
-    }
-
-    if (lastMatch) {
-      return {
-        ...previous.career,
-        leagueIndex:
-          previous.career
-            .leagueIndex +
-          1,
-        match: 1,
-        wins:
-          previous.career
-            .wins + 1,
-      };
-    }
-
-    return {
-      ...previous.career,
-      match:
-        previous.career
-          .match + 1,
-      wins:
-        previous.career
-          .wins + 1,
-    };
-  }
-
-  function finishBattle(
-    won,
-    sudden = false
-  ) {
-    if (!battle) {
-      return;
-    }
+    const draw =
+      battle.playerScore ===
+      battle.opponentScore;
 
     if (
       battle.mode ===
       "event"
     ) {
-      const eventIndex =
-        eventConfigs.findIndex(
-          (event) =>
-            event.id ===
-            battle.eventId
-        );
+      settleEventBattle(
+        win,
+        draw
+      );
+      return;
+    }
 
-      const event =
-        eventConfigs[
-          eventIndex
-        ];
+    settleCareerBattle(
+      win,
+      draw
+    );
+  }
 
-      const match =
-        battle.match;
-
-      if (!won) {
-        setBattle(
-          (previous) => ({
-            ...previous,
-            phase:
-              "finished",
-            result: {
-              won: false,
-              sudden,
-              currencyReward:
-                0,
-              rewardPlayer:
-                null,
-            },
-          })
-        );
-        return;
-      }
-
-      const currencyReward =
-        event.rewardBase +
-        match *
-          event.rewardStep;
-
-      const rewardPlayer =
-        match % 5 === 0
-          ? generatePlayer(
-              Math.min(
-                event.max,
-                Math.max(
-                  event.min,
-                  event.min +
-                    Math.floor(
-                      (match /
-                        event.matches) *
-                        (event.max -
-                          event.min)
-                    ) -
-                    1
-                )
-              ),
-              Math.min(
-                event.max,
-                Math.max(
-                  event.min,
-                  event.min +
-                    Math.floor(
-                      (match /
-                        event.matches) *
-                        (event.max -
-                          event.min)
-                    ) +
-                    1
-                )
-              )
-            )
-          : null;
-
-      const finalMatch =
-        match >=
-        event.matches;
-
-      setGame(
-        (previous) => {
-          const current =
-            previous.events[
-              event.id
-            ];
-
-          return {
-            ...previous,
-            collection:
-              rewardPlayer
-                ? [
-                    ...previous.collection,
-                    rewardPlayer,
-                  ]
-                : previous.collection,
-            trainingCap:
-              finalMatch
-                ? Math.max(
-                    previous.trainingCap,
-                    event.unlockCap
-                  )
-                : previous.trainingCap,
-            marketCap:
-              finalMatch
-                ? Math.max(
-                    previous.marketCap,
-                    event.unlockCap
-                  )
-                : previous.marketCap,
-            events: {
-              ...previous.events,
-              [event.id]: {
-                ...current,
-                currency:
-                  current.currency +
-                  currencyReward,
-                match:
-                  finalMatch
-                    ? event.matches
-                    : match + 1,
-                completed:
-                  finalMatch,
-              },
-            },
-          };
-        }
+  function settleEventBattle(
+    win,
+    draw
+  ) {
+    const event =
+      getEventConfig(
+        battle.eventId
       );
 
-      setBattle(
+    const state =
+      game.events[
+        battle.eventId
+      ];
+
+    const coinReward =
+      event.rewardBase +
+      state.match *
+        event.rewardStep;
+
+    if (draw) {
+      setGame(
         (previous) => ({
           ...previous,
-          phase:
-            "finished",
-          result: {
-            won: true,
-            sudden,
-            currencyReward,
-            rewardPlayer,
-            eventCompleted:
-              finalMatch,
+
+          coins:
+            previous.coins +
+            Math.floor(
+              coinReward / 2
+            ),
+
+          events: {
+            ...previous.events,
+
+            [event.id]: {
+              ...previous.events[
+                event.id
+              ],
+
+              nextMatchAt:
+                Date.now() +
+                EVENT_MATCH_COOLDOWN_MS,
+            },
+          },
+
+          stats: {
+            ...previous.stats,
+            draws:
+              previous.stats
+                .draws + 1,
           },
         })
       );
+
+      setBattle({
+        ...battle,
+
+        phase: "finished",
+
+        result: {
+          type: "draw",
+
+          coinReward:
+            Math.floor(
+              coinReward / 2
+            ),
+        },
+      });
 
       return;
     }
 
-    if (
-      battle.mode ===
-      "career"
-    ) {
-      if (!won) {
-        setBattle(
-          (previous) => ({
-            ...previous,
-            phase:
-              "loss-select",
-            result: {
-              won: false,
-              sudden,
-              lostPlayer:
-                null,
-            },
-          })
-        );
-        return;
-      }
-
-      const rewardPlayer = {
-        ...randomItem(
-          battle.opponentDeck
-        ),
-      };
-
-      const coinReward =
-        120 +
-        battle.leagueIndex *
-          100 +
-        battle.match *
-          15;
-
+    if (!win) {
       setGame(
         (previous) => ({
           ...previous,
-          coins:
-            previous.coins +
-            coinReward,
-          trophies:
-            previous.trophies +
-            1,
-          collection: [
-            ...previous.collection,
-            rewardPlayer,
-          ],
-          career:
-            advanceCareer(
-              previous
-            ),
-        })
-      );
 
-      setBattle(
-        (previous) => ({
-          ...previous,
-          phase:
-            "finished",
-          result: {
-            won: true,
-            sudden,
-            rewardPlayer,
-            coinReward,
+          events: {
+            ...previous.events,
+
+            [event.id]: {
+              ...previous.events[
+                event.id
+              ],
+
+              nextMatchAt:
+                Date.now() +
+                EVENT_MATCH_COOLDOWN_MS,
+            },
           },
         })
       );
+
+      setBattle({
+        ...battle,
+
+        phase: "finished",
+
+        result: {
+          type: "loss",
+        },
+      });
+
+      return;
     }
+
+    const packType =
+      getUpgradePackReward(
+        state.match,
+        event.matches
+      );
+
+    const choices =
+      generateRewardChoices(
+        event,
+        3
+      );
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins +
+          coinReward,
+
+        upgradePacks: {
+          ...previous.upgradePacks,
+
+          [packType]:
+            previous
+              .upgradePacks[
+                packType
+              ] + 1,
+        },
+
+        events: {
+          ...previous.events,
+
+          [event.id]: {
+            ...previous.events[
+              event.id
+            ],
+
+            wins:
+              previous.events[
+                event.id
+              ].wins + 1,
+
+            nextMatchAt:
+              Date.now() +
+              EVENT_MATCH_COOLDOWN_MS,
+          },
+        },
+      })
+    );
+
+    setBattle({
+      ...battle,
+
+      phase:
+        "reward-select",
+
+      rewardChoices:
+        choices,
+
+      rewardContext: {
+        coinReward,
+        packType,
+      },
+    });
   }
 
-  function giveCareerCard(
+  function settleCareerBattle(
+    win,
+    draw
+  ) {
+    const coinReward =
+      150 +
+      game.activeStage *
+        70 +
+      game.career.match *
+        20;
+
+    if (draw) {
+      setGame(
+        (previous) => ({
+          ...previous,
+
+          coins:
+            previous.coins +
+            Math.floor(
+              coinReward / 2
+            ),
+
+          stats: {
+            ...previous.stats,
+            draws:
+              previous.stats
+                .draws + 1,
+          },
+        })
+      );
+
+      setBattle({
+        ...battle,
+
+        phase: "finished",
+
+        result: {
+          type: "draw",
+
+          coinReward:
+            Math.floor(
+              coinReward / 2
+            ),
+        },
+      });
+
+      return;
+    }
+
+    if (!win) {
+      const safeCandidates =
+        battle.playerDeck.filter(
+          (player) => {
+            if (
+              player.unsellable
+            ) {
+              return false;
+            }
+
+            const copy =
+              game.collection.filter(
+                (item) =>
+                  !item.sold &&
+                  item.id !==
+                    player.id
+              );
+
+            return getSquadProblems(
+              copy
+            ).valid;
+          }
+        );
+
+      if (
+        safeCandidates.length
+      ) {
+        setBattle({
+          ...battle,
+
+          phase:
+            "loss-select",
+
+          lossCandidates:
+            safeCandidates,
+        });
+      } else {
+        setBattle({
+          ...battle,
+
+          phase: "finished",
+
+          result: {
+            type: "loss",
+            protected: true,
+          },
+        });
+      }
+
+      return;
+    }
+
+    const choices =
+      shuffle(
+        battle.opponentDeck
+      ).slice(0, 3);
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins +
+          coinReward,
+
+        trophies:
+          previous.trophies +
+          1,
+
+        career: {
+          ...previous.career,
+
+          totalWins:
+            previous.career
+              .totalWins + 1,
+
+          wins:
+            previous.career
+              .wins + 1,
+        },
+      })
+    );
+
+    setBattle({
+      ...battle,
+
+      phase:
+        "career-reward-select",
+
+      rewardChoices:
+        choices,
+
+      rewardContext: {
+        coinReward,
+      },
+    });
+  }
+
+  function claimRewardChoice(
     player
   ) {
+    if (!battle) {
+      return;
+    }
+
+    const isEvent =
+      battle.phase ===
+      "reward-select";
+
+    const isCareer =
+      battle.phase ===
+      "career-reward-select";
+
     if (
-      !battle ||
-      battle.mode !==
-        "career" ||
-      battle.phase !==
-        "loss-select"
+      !isEvent &&
+      !isCareer
+    ) {
+      return;
+    }
+
+    setGame(
+      (previous) => {
+        const next = {
+          ...previous,
+
+          collection: [
+            ...previous.collection,
+            {
+              ...player,
+              id:
+                crypto.randomUUID?.() ||
+                `${Date.now()}-${Math.random()}`,
+            },
+          ],
+        };
+
+        if (isEvent) {
+          const event =
+            getEventConfig(
+              battle.eventId
+            );
+
+          const oldState =
+            previous.events[
+              event.id
+            ];
+
+          const finalMatch =
+            oldState.match >=
+            event.matches;
+
+          next.events = {
+            ...previous.events,
+
+            [event.id]: {
+              ...oldState,
+
+              completed:
+                finalMatch,
+
+              match:
+                finalMatch
+                  ? oldState.match
+                  : oldState.match +
+                    1,
+            },
+          };
+
+          if (finalMatch) {
+            next.stageRewardsClaimed =
+              [
+                ...previous.stageRewardsClaimed,
+              ];
+
+            if (
+              !next.stageRewardsClaimed.includes(
+                event.stage
+              )
+            ) {
+              const special =
+                createStageRewardPlayer(
+                  event.stage
+                );
+
+              if (special) {
+                next.collection = [
+                  ...next.collection,
+                  special,
+                ];
+
+                next.stageRewardsClaimed.push(
+                  event.stage
+                );
+              }
+            }
+          }
+        }
+
+        if (isCareer) {
+          const nextMatch =
+            previous.career
+              .match + 1;
+
+          const stageFinished =
+            nextMatch > 10;
+
+          next.career = {
+            ...previous.career,
+
+            match:
+              stageFinished
+                ? 10
+                : nextMatch,
+
+            completedStages:
+              stageFinished &&
+              !previous.career.completedStages.includes(
+                previous.activeStage
+              )
+                ? [
+                    ...previous
+                      .career
+                      .completedStages,
+                    previous.activeStage,
+                  ]
+                : previous.career
+                    .completedStages,
+          };
+        }
+
+        return next;
+      }
+    );
+
+    setBattle({
+      ...battle,
+
+      phase: "finished",
+
+      result: {
+        type: "win",
+
+        rewardPlayer:
+          player,
+
+        ...battle.rewardContext,
+      },
+    });
+  }
+
+  useEffect(() => {
+    const stage =
+      game.activeStage;
+
+    if (
+      stage >= 10
+    ) {
+      return;
+    }
+
+    const event =
+      eventConfigs[
+        stage - 1
+      ];
+
+    const eventDone =
+      game.events[
+        event.id
+      ]?.completed;
+
+    const careerDone =
+      game.career
+        .completedStages.includes(
+          stage
+        );
+
+    if (
+      !eventDone ||
+      !careerDone
     ) {
       return;
     }
@@ -2666,88 +3290,216 @@ function App() {
     setGame(
       (previous) => ({
         ...previous,
-        collection:
-          previous.collection.filter(
-            (item) =>
-              item.id !==
-              player.id
+
+        activeStage:
+          Math.min(
+            10,
+            previous.activeStage +
+              1
           ),
-        squad:
-          previous.squad.filter(
-            (id) =>
-              id !==
-              player.id
+
+        career: {
+          ...previous.career,
+          stage:
+            Math.min(
+              10,
+              previous.career
+                .stage + 1
+            ),
+          match: 1,
+          wins: 0,
+        },
+
+        marketCap:
+          event.unlockCap,
+
+        trainingCap:
+          event.unlockCap,
+
+        market:
+          generateMarketPlayers(
+            6,
+            event.unlockCap
           ),
-        training:
-          previous.training
-            ?.playerId ===
-          player.id
-            ? null
-            : previous.training,
       })
     );
 
-    setBattle(
+    showNotice(
+      `🔥 Aşama ${
+        stage + 1
+      } açıldı!`
+    );
+  }, [
+    game.activeStage,
+    game.events,
+    game.career
+      .completedStages,
+  ]);
+
+  function loseCareerPlayer(
+    player
+  ) {
+    if (
+      battle?.phase !==
+      "loss-select"
+    ) {
+      return;
+    }
+
+    setGame(
       (previous) => ({
         ...previous,
-        phase:
-          "finished",
-        result: {
-          ...previous.result,
-          lostPlayer:
-            player,
+
+        collection:
+          previous.collection.map(
+            (item) =>
+              item.id ===
+              player.id
+                ? {
+                    ...item,
+                    sold: true,
+                    lost: true,
+                  }
+                : item
+          ),
+
+        formation:
+          Object.fromEntries(
+            Object.entries(
+              previous.formation
+            ).filter(
+              ([, id]) =>
+                id !==
+                player.id
+            )
+          ),
+      })
+    );
+
+    setBattle({
+      ...battle,
+
+      phase: "finished",
+
+      result: {
+        type: "loss",
+        lostPlayer:
+          player,
+      },
+    });
+  }
+
+  function finishTrainingNow() {
+    if (
+      !game.training
+    ) {
+      return;
+    }
+
+    const cost =
+      calculateSpeedUpCost(
+        game.training,
+        now
+      );
+
+    if (
+      game.coins < cost
+    ) {
+      showNotice(
+        "Yeterli Coin yok."
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins -
+          cost,
+
+        training: {
+          ...previous.training,
+          endsAt:
+            Date.now(),
         },
       })
     );
   }
 
-  function closeBattle() {
-    const state =
-      window.history.state;
-
-    if (
-      state?.scw &&
-      state.view ===
-        "battle"
-    ) {
-      window.history.back();
-      return;
-    }
-
-    setBattle(null);
-  }
-
-  function buyEventPlayer(
-    eventId,
-    playerId
+  function startTraining(
+    plan,
+    payWithPack = false
   ) {
-    const event =
-      getEventConfig(
-        eventId
-      );
-
-    const eventState =
-      game.events[
-        eventId
-      ];
-
     const player =
-      eventState.shop.find(
+      game.collection.find(
         (item) =>
           item.id ===
-          playerId
+          selectedTrainingPlayer
       );
 
     if (!player) {
+      showNotice(
+        "Önce oyuncu seç."
+      );
+      return;
+    }
+
+    const check =
+      canSendToTraining(
+        game,
+        player
+      );
+
+    if (
+      !check.allowed
+    ) {
+      showNotice(
+        check.message
+      );
       return;
     }
 
     if (
-      eventState.currency <
-      player.eventPrice
+      player.overall >=
+      game.trainingCap
     ) {
       showNotice(
-        `Yeterli ${event.currencyName} yok.`
+        `Bu aşamada antrenman sınırı ${game.trainingCap} GEN.`
+      );
+      return;
+    }
+
+    if (game.training) {
+      showNotice(
+        "Zaten devam eden bir antrenman var."
+      );
+      return;
+    }
+
+    const cost =
+      calculateTrainingCost(
+        plan,
+        player.overall
+      );
+
+    if (payWithPack) {
+      if (
+        game.upgradePacks[
+          plan.packType
+        ] <= 0
+      ) {
+        showNotice(
+          "Bu GEN paketinden yok."
+        );
+        return;
+      }
+    } else if (
+      game.coins < cost
+    ) {
+      showNotice(
+        "Yeterli Coin yok."
       );
       return;
     }
@@ -2755,40 +3507,1010 @@ function App() {
     setGame(
       (previous) => ({
         ...previous,
-        collection: [
-          ...previous.collection,
-          {
-            ...player,
-            eventPrice:
-              undefined,
-          },
-        ],
-        events: {
-          ...previous.events,
-          [eventId]: {
-            ...previous.events[
-              eventId
-            ],
-            currency:
-              previous.events[
-                eventId
-              ].currency -
-              player.eventPrice,
-            shop:
-              previous.events[
-                eventId
-              ].shop.filter(
-                (item) =>
-                  item.id !==
-                  playerId
-              ),
-          },
+
+        coins:
+          payWithPack
+            ? previous.coins
+            : previous.coins -
+              cost,
+
+        upgradePacks:
+          payWithPack
+            ? {
+                ...previous.upgradePacks,
+
+                [plan.packType]:
+                  previous
+                    .upgradePacks[
+                      plan.packType
+                    ] - 1,
+              }
+            : previous.upgradePacks,
+
+        training: {
+          playerId:
+            player.id,
+
+          gain:
+            plan.gain,
+
+          startedAt:
+            Date.now(),
+
+          endsAt:
+            Date.now() +
+            plan.hours *
+              60 *
+              60 *
+              1000,
+        },
+      })
+    );
+
+    setSelectedTrainingPlayer(
+      null
+    );
+  }
+
+  function buyCoach(
+    config
+  ) {
+    if (
+      game.coaches.ownedStars.includes(
+        config.stars
+      )
+    ) {
+      return;
+    }
+
+    if (
+      game.coins <
+      config.price
+    ) {
+      showNotice(
+        "Yeterli Coin yok."
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins -
+          config.price,
+
+        coaches: {
+          ...previous.coaches,
+
+          ownedStars: [
+            ...previous.coaches
+              .ownedStars,
+            config.stars,
+          ],
+        },
+      })
+    );
+  }
+
+  function startCoachSession(
+    config
+  ) {
+    if (
+      !game.coaches.ownedStars.includes(
+        config.stars
+      )
+    ) {
+      return;
+    }
+
+    const current =
+      game.coaches.activeSessions.find(
+        (session) =>
+          session.stars ===
+            config.stars &&
+          !session.finished &&
+          session.endsAt >
+            now
+      );
+
+    if (current) {
+      showNotice(
+        "Bu antrenör şu anda çalışıyor."
+      );
+      return;
+    }
+
+    const candidates =
+      usablePlayers.filter(
+        (player) =>
+          player.overall <
+            game.trainingCap &&
+          !isPlayerBusy(
+            player,
+            game
+          )
+      );
+
+    const safe =
+      candidates.filter(
+        (player) =>
+          canSendToTraining(
+            game,
+            player
+          ).allowed
+      );
+
+    const selected =
+      safe.slice(
+        0,
+        config.slots
+      );
+
+    if (
+      selected.length <
+      config.slots
+    ) {
+      showNotice(
+        `Bu antrenör için ${config.slots} uygun oyuncu gerekiyor.`
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coaches: {
+          ...previous.coaches,
+
+          activeSessions: [
+            ...previous.coaches
+              .activeSessions,
+
+            {
+              id:
+                crypto.randomUUID?.() ||
+                `${Date.now()}-${Math.random()}`,
+
+              stars:
+                config.stars,
+
+              playerIds:
+                selected.map(
+                  (player) =>
+                    player.id
+                ),
+
+              startedAt:
+                Date.now(),
+
+              endsAt:
+                Date.now() +
+                config.minutes *
+                  60 *
+                  1000,
+
+              finished: false,
+            },
+          ],
         },
       })
     );
 
     showNotice(
-      `${player.name}, ${event.name} mağazasından alındı.`
+      `${config.name} ${selected.length} oyuncuyla çalışmaya başladı.`
+    );
+  }
+
+  function unlockRentalCenter() {
+    if (
+      game.rentalCenter
+        .unlocked
+    ) {
+      return;
+    }
+
+    if (
+      game.coins <
+      rentalCenterConfig
+        .unlockPrice
+    ) {
+      showNotice(
+        "Yeterli Coin yok."
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins -
+          rentalCenterConfig
+            .unlockPrice,
+
+        rentalCenter: {
+          ...previous.rentalCenter,
+          unlocked: true,
+        },
+      })
+    );
+  }
+
+  function unlockRentalSlot() {
+    const index =
+      game.rentalCenter
+        .slotsUnlocked;
+
+    const price =
+      rentalCenterConfig
+        .slotPrices[
+          index
+        ];
+
+    if (
+      price ===
+      undefined
+    ) {
+      return;
+    }
+
+    if (
+      game.coins < price
+    ) {
+      showNotice(
+        "Yeterli Coin yok."
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins -
+          price,
+
+        rentalCenter: {
+          ...previous.rentalCenter,
+
+          slotsUnlocked:
+            previous
+              .rentalCenter
+              .slotsUnlocked +
+            1,
+        },
+      })
+    );
+  }
+
+  function rentPlayer(
+    player
+  ) {
+    const check =
+      canRentPlayer(
+        game,
+        player
+      );
+
+    if (
+      !check.allowed
+    ) {
+      showNotice(
+        check.message
+      );
+      return;
+    }
+
+    const activeRentals =
+      game.rentalCenter.rentals.filter(
+        (rental) =>
+          !rental.finished &&
+          rental.endsAt >
+            now
+      );
+
+    if (
+      activeRentals.length >=
+      game.rentalCenter
+        .slotsUnlocked
+    ) {
+      showNotice(
+        "Boş kiralama slotun yok."
+      );
+      return;
+    }
+
+    const start =
+      Date.now();
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        rentalCenter: {
+          ...previous.rentalCenter,
+
+          rentals: [
+            ...previous
+              .rentalCenter
+              .rentals,
+
+            {
+              id:
+                crypto.randomUUID?.() ||
+                `${Date.now()}-${Math.random()}`,
+
+              playerId:
+                player.id,
+
+              startedAt:
+                start,
+
+              endsAt:
+                start +
+                rentalCenterConfig
+                  .maxHours *
+                  60 *
+                  60 *
+                  1000,
+
+              finished: false,
+              earned: 0,
+            },
+          ],
+        },
+      })
+    );
+  }
+
+  function recallRental(
+    rental
+  ) {
+    if (
+      rental.finished
+    ) {
+      return;
+    }
+
+    const player =
+      game.collection.find(
+        (item) =>
+          item.id ===
+          rental.playerId
+      );
+
+    const income =
+      player
+        ? calculateRentalIncome(
+            player.overall,
+            Date.now() -
+              rental.startedAt
+          )
+        : 0;
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        rentalCenter: {
+          ...previous.rentalCenter,
+
+          pendingCoins:
+            previous
+              .rentalCenter
+              .pendingCoins +
+            income,
+
+          lifetimeCoins:
+            previous
+              .rentalCenter
+              .lifetimeCoins +
+            income,
+
+          completedRentals:
+            previous
+              .rentalCenter
+              .completedRentals +
+            1,
+
+          rentals:
+            previous
+              .rentalCenter
+              .rentals.map(
+                (item) =>
+                  item.id ===
+                  rental.id
+                    ? {
+                        ...item,
+                        finished: true,
+                        earned:
+                          income,
+                      }
+                    : item
+              ),
+        },
+      })
+    );
+  }
+
+  function collectRentalMoney() {
+    const amount =
+      game.rentalCenter
+        .pendingCoins;
+
+    if (
+      amount <= 0
+    ) {
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins +
+          amount,
+
+        rentalCenter: {
+          ...previous.rentalCenter,
+          pendingCoins: 0,
+        },
+      })
+    );
+
+    showNotice(
+      `🪙 ${amount.toLocaleString()} Coin toplandı.`
+    );
+  }
+
+  function confirmBuyMarket(
+    player
+  ) {
+    setPurchaseModal({
+      type: "market",
+      player,
+    });
+  }
+
+  function confirmBuyEvent(
+    player,
+    eventId
+  ) {
+    setPurchaseModal({
+      type: "event",
+      player,
+      eventId,
+    });
+  }
+
+  function executePurchase() {
+    if (
+      !purchaseModal
+    ) {
+      return;
+    }
+
+    const {
+      type,
+      player,
+      eventId,
+    } =
+      purchaseModal;
+
+    if (
+      type === "market"
+    ) {
+      if (
+        game.coins <
+        player.price
+      ) {
+        showNotice(
+          "Yeterli Coin yok."
+        );
+
+        setPurchaseModal(
+          null
+        );
+
+        return;
+      }
+
+      setGame(
+        (previous) => ({
+          ...previous,
+
+          coins:
+            previous.coins -
+            player.price,
+
+          collection: [
+            ...previous.collection,
+            {
+              ...player,
+              price: undefined,
+            },
+          ],
+
+          market:
+            previous.market.filter(
+              (item) =>
+                item.id !==
+                player.id
+            ),
+
+          stats: {
+            ...previous.stats,
+
+            transfersBought:
+              previous.stats
+                .transfersBought +
+              1,
+          },
+        })
+      );
+    }
+
+    if (
+      type === "event"
+    ) {
+      const event =
+        getEventConfig(
+          eventId
+        );
+
+      const state =
+        game.events[
+          eventId
+        ];
+
+      if (
+        state.currency <
+        player.eventPrice
+      ) {
+        showNotice(
+          "Etkinlik paran yetersiz."
+        );
+
+        setPurchaseModal(
+          null
+        );
+
+        return;
+      }
+
+      setGame(
+        (previous) => ({
+          ...previous,
+
+          collection: [
+            ...previous.collection,
+            {
+              ...player,
+              eventPrice:
+                undefined,
+            },
+          ],
+
+          events: {
+            ...previous.events,
+
+            [eventId]: {
+              ...previous.events[
+                eventId
+              ],
+
+              currency:
+                previous.events[
+                  eventId
+                ].currency -
+                player.eventPrice,
+
+              shop:
+                previous.events[
+                  eventId
+                ].shop.filter(
+                  (item) =>
+                    item.id !==
+                    player.id
+                ),
+            },
+          },
+        })
+      );
+
+      showNotice(
+        `${player.name}, ${event.name} mağazasından alındı.`
+      );
+    }
+
+    setPurchaseModal(
+      null
+    );
+  }
+
+  function sellPlayer(
+    player
+  ) {
+    const check =
+      canSellPlayer(
+        game,
+        player
+      );
+
+    if (
+      !check.allowed
+    ) {
+      showNotice(
+        check.message
+      );
+      return;
+    }
+
+    const price =
+      calculateSellPrice(
+        player
+      );
+
+    const confirmed =
+      window.confirm(
+        `${player.name} ${price.toLocaleString()} Coin karşılığında satılsın mı?`
+      );
+
+    if (
+      !confirmed
+    ) {
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins +
+          price,
+
+        collection:
+          previous.collection.map(
+            (item) =>
+              item.id ===
+              player.id
+                ? {
+                    ...item,
+                    sold: true,
+                  }
+                : item
+          ),
+
+        formation:
+          Object.fromEntries(
+            Object.entries(
+              previous.formation
+            ).filter(
+              ([, id]) =>
+                id !==
+                player.id
+            )
+          ),
+
+        stats: {
+          ...previous.stats,
+
+          playersSold:
+            previous.stats
+              .playersSold +
+            1,
+        },
+      })
+    );
+  }
+
+  function refreshMarket() {
+    if (
+      game.coins < 100
+    ) {
+      showNotice(
+        "Market yenilemek için 100 Coin gerekli."
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins -
+          100,
+
+        market:
+          generateMarketPlayers(
+            6,
+            previous.marketCap
+          ),
+      })
+    );
+  }
+
+  function createMyPlayer() {
+    if (
+      game.coins < 750
+    ) {
+      showNotice(
+        "Özel oyuncu için 750 Coin gerekli."
+      );
+      return;
+    }
+
+    if (
+      !customName.trim()
+    ) {
+      showNotice(
+        "Oyuncunun adını yaz."
+      );
+      return;
+    }
+
+    const player =
+      createCustomPlayer(
+        customName,
+        customPosition,
+        customCountry
+      );
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins -
+          750,
+
+        collection: [
+          ...previous.collection,
+          player,
+        ],
+      })
+    );
+
+    setCustomName("");
+  }
+
+  function claimDaily() {
+    if (
+      !isDailyRewardReady(
+        game,
+        now
+      )
+    ) {
+      return;
+    }
+
+    const nextStreak =
+      Math.min(
+        7,
+        (game.daily
+          ?.streak ||
+          0) + 1
+      );
+
+    const amounts = [
+      300,
+      400,
+      500,
+      650,
+      800,
+      1000,
+    ];
+
+    if (
+      nextStreak === 7
+    ) {
+      const player =
+        generateMarketPlayers(
+          1,
+          Math.min(
+            99,
+            game.marketCap
+          )
+        )[0];
+
+      setGame(
+        (previous) => ({
+          ...previous,
+
+          collection: [
+            ...previous.collection,
+            {
+              ...player,
+              price: undefined,
+            },
+          ],
+
+          daily: {
+            lastClaimAt:
+              Date.now(),
+            streak:
+              nextStreak,
+          },
+        })
+      );
+    } else {
+      const reward =
+        amounts[
+          nextStreak -
+            1
+        ];
+
+      setGame(
+        (previous) => ({
+          ...previous,
+
+          coins:
+            previous.coins +
+            reward,
+
+          daily: {
+            lastClaimAt:
+              Date.now(),
+            streak:
+              nextStreak,
+          },
+        })
+      );
+    }
+  }
+
+  function redeemCoupon() {
+    const code =
+      couponInput
+        .trim()
+        .toUpperCase();
+
+    if (
+      code !== "SAMSUN"
+    ) {
+      showNotice(
+        "Geçersiz kod."
+      );
+      return;
+    }
+
+    if (
+      game.redeemedCoupons.includes(
+        code
+      )
+    ) {
+      showNotice(
+        "Bu kod daha önce kullanıldı."
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins +
+          100000,
+
+        redeemedCoupons: [
+          ...previous.redeemedCoupons,
+          code,
+        ],
+      })
+    );
+
+    setCouponInput("");
+
+    showNotice(
+      "Test için 100.000 Coin eklendi."
+    );
+  }
+
+  async function installApp() {
+    if (installed) {
+      showNotice(
+        "Uygulama zaten bu cihazda kurulu."
+      );
+      return;
+    }
+
+    if (
+      !installPrompt
+    ) {
+      showNotice(
+        "Kurulum seçeneği şu anda tarayıcı tarafından sunulmuyor."
+      );
+      return;
+    }
+
+    await installPrompt.prompt();
+
+    await installPrompt
+      .userChoice;
+
+    setInstallPrompt(
+      null
+    );
+  }
+
+  function buyTestCoins(
+    pack
+  ) {
+    if (
+      !STORE_TEST_MODE
+    ) {
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        coins:
+          previous.coins +
+          pack.coins,
+
+        storePurchases: [
+          ...previous.storePurchases,
+          {
+            id:
+              pack.id,
+            at:
+              Date.now(),
+          },
+        ],
+      })
+    );
+  }
+
+  function toggleInfo() {
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        profile: {
+          ...previous.profile,
+
+          infoEnabled:
+            !previous.profile
+              .infoEnabled,
+        },
+      })
+    );
+  }
+
+  function toggleNotification(
+    key
+  ) {
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        profile: {
+          ...previous.profile,
+
+          notifications: {
+            ...previous.profile
+              .notifications,
+
+            [key]:
+              !previous
+                .profile
+                .notifications[
+                  key
+                ],
+          },
+        },
+      })
     );
   }
 
@@ -2801,7 +4523,6 @@ function App() {
           onClick={goHome}
         >
           <img
-            className="mini-logo-image"
             src={`${
               import.meta.env
                 .BASE_URL
@@ -2809,155 +4530,1679 @@ function App() {
             alt="SCW"
           />
 
-          <div className="club-text">
+          <div>
             <div className="club-name">
               {game.clubName}
             </div>
 
-            <div className="club-level">
-              SOCCER CARDS WAR
+            <div className="club-sub">
+              AŞAMA{" "}
+              {game.activeStage}
             </div>
           </div>
         </button>
 
-        <div className="currencies">
+        <div className="top-right">
           <div className="currency">
             🪙{" "}
-            <b>
-              {game.coins.toLocaleString()}
-            </b>
+            {game.coins.toLocaleString()}
           </div>
 
           <div className="currency">
             💎{" "}
-            <b>
-              {game.gems}
-            </b>
+            {game.gems}
           </div>
 
           <div className="currency">
             🏆{" "}
-            <b>
-              {game.trophies}
-            </b>
+            {game.trophies}
           </div>
 
           <button
             type="button"
-            className="icon-button danger-button"
-            onClick={resetGame}
-            title="Oyunu sıfırla"
+            className="profile-small-button"
+            onClick={() =>
+              openScreen(
+                "profile"
+              )
+            }
           >
-            ↻
+            👤
           </button>
         </div>
       </header>
     );
   }
 
-  function Notice() {
-    if (!notice) {
+  function InfoBox({
+    children,
+  }) {
+    if (
+      !game.profile
+        ?.infoEnabled
+    ) {
       return null;
     }
 
     return (
-      <button
-        type="button"
-        className="notice"
-        onClick={() =>
-          setNotice("")
-        }
-      >
-        {notice}
-      </button>
+      <div className="info-box">
+        ℹ️ {children}
+      </div>
     );
   }
 
-  function CardBack() {
+  function PageHeader({
+    title,
+    subtitle,
+  }) {
     return (
-      <div className="card-back">
-        <div className="card-back-inner">
-          <img
-            src={`${
-              import.meta.env
-                .BASE_URL
-            }icons/icon.svg`}
-            alt=""
-            className="card-back-logo"
-          />
+      <div className="section-head">
+        <div>
+          <h1 className="section-title">
+            {title}
+          </h1>
 
-          <div className="card-back-label">
-            GİZLİ KART
+          {subtitle && (
+            <p className="section-subtitle">
+              {subtitle}
+            </p>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="back-button"
+          onClick={goHome}
+        >
+          GERİ
+        </button>
+      </div>
+    );
+  }
+
+  function HomeScreen() {
+    const dailyRemaining =
+      getDailyRewardRemaining(
+        game,
+        now
+      );
+
+    return (
+      <div className="page-card">
+        <div className="section-head">
+          <div>
+            <h1 className="section-title">
+              {game.clubName}
+            </h1>
+
+            <p className="section-subtitle">
+              Aşama{" "}
+              {game.activeStage} •
+              Kadro GEN{" "}
+              {averageOverall(
+                getFormationDeck()
+              )}
+            </p>
           </div>
         </div>
+
+        {dailyRemaining >
+        0 ? (
+          <div className="notice">
+            🎁 Sonraki günlük
+            ödül:{" "}
+            {millisecondsToClock(
+              dailyRemaining
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="gold-button"
+            style={{
+              width: "100%",
+              marginBottom:
+                12,
+            }}
+            onClick={
+              claimDaily
+            }
+          >
+            🎁 GÜNLÜK ÖDÜLÜ
+            AL
+          </button>
+        )}
+
+        <div className="menu-grid">
+          <button
+            type="button"
+            className="menu-card menu-career"
+            onClick={() =>
+              openScreen(
+                "career"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🔥
+            </div>
+
+            <strong>
+              KARİYER
+            </strong>
+
+            <span>
+              Aşama{" "}
+              {game.activeStage} •
+              Maç{" "}
+              {game.career.match}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card menu-event"
+            onClick={() =>
+              openScreen(
+                "events"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🔵
+            </div>
+
+            <strong>
+              ETKİNLİK
+            </strong>
+
+            <span>
+              Kart seç • GEN
+              paketleri kazan
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card menu-training"
+            onClick={() =>
+              openScreen(
+                "training"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🏋️
+            </div>
+
+            <strong>
+              ANTRENMAN
+            </strong>
+
+            <span>
+              Coin veya GEN
+              paketiyle geliştir
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card menu-transfer"
+            onClick={() =>
+              openScreen(
+                "transfers"
+              )
+            }
+          >
+            <div className="menu-icon">
+              💰
+            </div>
+
+            <strong>
+              TRANSFER
+            </strong>
+
+            <span>
+              Oyuncu al ve sat
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card"
+            onClick={() =>
+              openScreen(
+                "team"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🟩
+            </div>
+
+            <strong>
+              TAKIMIM
+            </strong>
+
+            <span>
+              Profesyonel kadro
+              ekranı
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card"
+            onClick={() =>
+              openScreen(
+                "collection"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🃏
+            </div>
+
+            <strong>
+              KOLEKSİYON
+            </strong>
+
+            <span>
+              Kartlar ve aşama
+              ödülleri
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card"
+            onClick={() =>
+              openScreen(
+                "rental"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🤝
+            </div>
+
+            <strong>
+              KİRALIK MERKEZİ
+            </strong>
+
+            <span>
+              Oyuncularından pasif
+              gelir kazan
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card"
+            onClick={() =>
+              openScreen(
+                "coaches"
+              )
+            }
+          >
+            <div className="menu-icon">
+              ⭐
+            </div>
+
+            <strong>
+              ANTRENÖRLER
+            </strong>
+
+            <span>
+              Yıldızlı antrenörler
+              satın al
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card"
+            onClick={() =>
+              openScreen(
+                "store"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🛒
+            </div>
+
+            <strong>
+              MAĞAZA
+            </strong>
+
+            <span>
+              Test Coin paketleri
+            </span>
+          </button>
+        </div>
       </div>
     );
   }
 
-  function BattleScore({
-    battle:
-      currentBattle,
-  }) {
+  function TeamScreen() {
+    const deck =
+      getFormationDeck();
+
+    const validation =
+      getSquadProblems(
+        deck
+      );
+
+    const renderSlot =
+      (item) => {
+        const player =
+          item.player;
+
+        return (
+          <button
+            type="button"
+            key={
+              item.slot.id
+            }
+            className={`squad-slot ${
+              player
+                ? "filled"
+                : ""
+            }`}
+            onClick={() => {
+              if (
+                selectedTeamPlayer
+              ) {
+                placePlayer(
+                  item.slot
+                );
+                return;
+              }
+
+              if (player) {
+                removeSlot(
+                  item.slot.id
+                );
+              }
+            }}
+          >
+            <span className="slot-name">
+              {
+                item.slot
+                  .label
+              }
+            </span>
+
+            {player ? (
+              <>
+                <span className="slot-overall">
+                  {
+                    player.overall
+                  }
+                </span>
+
+                <span className="slot-player-name">
+                  {getCountryFlag(
+                    player.country
+                  )}{" "}
+                  {player.name}
+                </span>
+
+                <small>
+                  {
+                    player.position
+                  }
+                </small>
+              </>
+            ) : (
+              <span className="slot-player-name">
+                + OYUNCU SEÇ
+              </span>
+            )}
+          </button>
+        );
+      };
+
     return (
-      <div className="battle-score">
-        <div>
-          <span>SEN</span>
-          <strong>
-            {currentBattle.playerScore}
-          </strong>
+      <div className="page-card">
+        <PageHeader
+          title="TAKIMIM"
+          subtitle="2 Forvet • 3 Orta Saha • 4 Defans • 1 Kaleci"
+        />
+
+        <InfoBox>
+          Alttan bir oyuncuya
+          dokun, sonra üstte
+          uygun pozisyon slotuna
+          dokun. Antrenmanda veya
+          kiralıkta olan oyuncular
+          kullanılamaz.
+        </InfoBox>
+
+        <div className="team-field">
+          <div className="team-row two">
+            {formationPlayers
+              .slice(0, 2)
+              .map(
+                renderSlot
+              )}
+          </div>
+
+          <div className="team-row three">
+            {formationPlayers
+              .slice(2, 5)
+              .map(
+                renderSlot
+              )}
+          </div>
+
+          <div className="team-row four">
+            {formationPlayers
+              .slice(5, 9)
+              .map(
+                renderSlot
+              )}
+          </div>
+
+          <div className="team-row one">
+            {formationPlayers
+              .slice(9, 10)
+              .map(
+                renderSlot
+              )}
+          </div>
         </div>
 
-        <b>:</b>
+        <div className="notice">
+          {validation.valid &&
+          deck.length === 10
+            ? `✅ Kadro hazır • Ortalama GEN ${averageOverall(
+                deck
+              )}`
+            : "⚠️ Kadroyu tamamla: 2 Forvet + 3 Orta Saha + 4 Defans + 1 Kaleci"}
+        </div>
 
-        <div>
-          <span>RAKİP</span>
-          <strong>
-            {currentBattle.opponentScore}
-          </strong>
+        <h2>
+          Oyuncular
+        </h2>
+
+        <div className="player-grid">
+          {ownedPlayers.map(
+            (player) => {
+              const busy =
+                isPlayerBusy(
+                  player,
+                  game
+                );
+
+              const locked =
+                player.overall >
+                  stageCap &&
+                player.overall !==
+                  100;
+
+              return (
+                <PlayerCard
+                  key={
+                    player.id
+                  }
+                  player={
+                    player
+                  }
+                  selected={
+                    selectedTeamPlayer ===
+                    player.id
+                  }
+                  training={
+                    game.training
+                      ?.playerId ===
+                    player.id
+                  }
+                  rented={
+                    game.rentalCenter.rentals.some(
+                      (
+                        rental
+                      ) =>
+                        rental.playerId ===
+                          player.id &&
+                        !rental.finished &&
+                        rental.endsAt >
+                          now
+                    )
+                  }
+                  locked={
+                    locked
+                  }
+                  disabled={
+                    busy ||
+                    locked
+                  }
+                  onClick={() =>
+                    setSelectedTeamPlayer(
+                      player.id
+                    )
+                  }
+                />
+              );
+            }
+          )}
         </div>
       </div>
     );
   }
 
-  function RevealArena({
-    reveal,
-  }) {
+  function CollectionScreen() {
     return (
-      <div className="reveal-arena">
-        <div>
-          <span className="reveal-label">
-            SEN
-          </span>
+      <div className="page-card">
+        <PageHeader
+          title="KOLEKSİYON"
+          subtitle={`${game.collection.length} keşfedilmiş kart`}
+        />
 
-          <PlayerCard
-            player={
-              reveal.player
+        <InfoBox>
+          Satılan oyuncular burada
+          geçmiş kart olarak
+          görünmeye devam eder.
+          Aşama ödülleri ise daha
+          kazanılmadan kilitli
+          şekilde gösterilir.
+        </InfoBox>
+
+        <h2>
+          Aşama Ödülleri
+        </h2>
+
+        <div className="stage-reward-grid">
+          {stageRewards.map(
+            (reward) => {
+              const claimed =
+                game.stageRewardsClaimed.includes(
+                  reward.stage
+                );
+
+              return (
+                <div
+                  key={
+                    reward.stage
+                  }
+                  className={`stage-reward-card ${
+                    claimed
+                      ? ""
+                      : "locked"
+                  }`}
+                >
+                  <div className="big-number">
+                    {
+                      reward.overall
+                    }
+                  </div>
+
+                  <strong>
+                    {getCountryFlag(
+                      reward.country
+                    )}{" "}
+                    {
+                      reward.name
+                    }
+                  </strong>
+
+                  <p>
+                    Aşama{" "}
+                    {
+                      reward.stage
+                    }{" "}
+                    Ödülü
+                  </p>
+
+                  <span className="status-pill">
+                    {claimed
+                      ? "AÇILDI"
+                      : "🔒 KİLİTLİ"}
+                  </span>
+                </div>
+              );
             }
-            compact
-          />
+          )}
         </div>
 
-        <div className="versus-result">
-          <strong>
-            {reveal.player.overall}
-          </strong>
-          <span>VS</span>
-          <strong>
-            {reveal.opponent.overall}
-          </strong>
+        <h2 style={{
+          marginTop: 24,
+        }}>
+          Tüm Kartlar
+        </h2>
+
+        <div className="player-grid">
+          {game.collection.map(
+            (player) => (
+              <PlayerCard
+                key={
+                  player.id
+                }
+                player={
+                  player
+                }
+                sold={
+                  player.sold
+                }
+              />
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function TransfersScreen() {
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="TRANSFER"
+          subtitle={`Market sınırı: ${game.marketCap} GEN`}
+        />
+
+        <InfoBox>
+          Buradan oyuncu satın
+          alabilir ve sahip
+          olduğun oyuncuları
+          satabilirsin. Satıştan
+          sonra minimum kadro
+          dağılımın bozulamaz.
+        </InfoBox>
+
+        <div className="action-row">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={
+              refreshMarket
+            }
+          >
+            🔄 MARKETİ
+            YENİLE • 100
+          </button>
         </div>
 
-        <div>
-          <span className="reveal-label">
-            RAKİP
+        <h2>
+          Transfer Pazarı
+        </h2>
+
+        <div className="player-grid">
+          {game.market.map(
+            (player) => (
+              <div
+                key={
+                  player.id
+                }
+              >
+                <PlayerCard
+                  player={
+                    player
+                  }
+                  price={
+                    player.price
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="gold-button"
+                  style={{
+                    width:
+                      "100%",
+                    marginTop:
+                      6,
+                  }}
+                  onClick={() =>
+                    confirmBuyMarket(
+                      player
+                    )
+                  }
+                >
+                  SATIN AL
+                </button>
+              </div>
+            )
+          )}
+        </div>
+
+        <h2 style={{
+          marginTop: 26,
+        }}>
+          Oyuncu Sat
+        </h2>
+
+        <div className="player-grid">
+          {ownedPlayers.map(
+            (player) => (
+              <div
+                key={
+                  player.id
+                }
+              >
+                <PlayerCard
+                  player={
+                    player
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="danger-button"
+                  style={{
+                    width:
+                      "100%",
+                    marginTop:
+                      6,
+                  }}
+                  onClick={() =>
+                    sellPlayer(
+                      player
+                    )
+                  }
+                >
+                  SAT •{" "}
+                  {calculateSellPrice(
+                    player
+                  ).toLocaleString()}
+                </button>
+              </div>
+            )
+          )}
+        </div>
+
+        <h2 style={{
+          marginTop: 26,
+        }}>
+          Kendi Oyuncunu Oluştur
+        </h2>
+
+        <div className="panel">
+          <label className="field-label">
+            İsim
+          </label>
+
+          <input
+            className="text-input"
+            value={
+              customName
+            }
+            onChange={(event) =>
+              setCustomName(
+                event.target
+                  .value
+              )
+            }
+          />
+
+          <label className="field-label">
+            Pozisyon
+          </label>
+
+          <select
+            className="select-input"
+            value={
+              customPosition
+            }
+            onChange={(event) =>
+              setCustomPosition(
+                event.target
+                  .value
+              )
+            }
+          >
+            {positions.map(
+              (position) => (
+                <option
+                  key={
+                    position
+                  }
+                  value={
+                    position
+                  }
+                >
+                  {position}
+                </option>
+              )
+            )}
+          </select>
+
+          <label className="field-label">
+            Milliyet
+          </label>
+
+          <select
+            className="select-input"
+            value={
+              customCountry
+            }
+            onChange={(event) =>
+              setCustomCountry(
+                event.target
+                  .value
+              )
+            }
+          >
+            {countries.map(
+              (country) => (
+                <option
+                  key={
+                    country.code
+                  }
+                  value={
+                    country.code
+                  }
+                >
+                  {
+                    country.flag
+                  }{" "}
+                  {
+                    country.name
+                  }
+                </option>
+              )
+            )}
+          </select>
+
+          <button
+            type="button"
+            className="gold-button"
+            style={{
+              width: "100%",
+              marginTop: 12,
+            }}
+            onClick={
+              createMyPlayer
+            }
+          >
+            OLUŞTUR • 750
+            COIN
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function TrainingScreen() {
+    const currentPlayer =
+      game.training
+        ? game.collection.find(
+            (player) =>
+              player.id ===
+              game.training
+                .playerId
+          )
+        : null;
+
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="ANTRENMAN"
+          subtitle={`Aşama sınırı: ${game.trainingCap} GEN`}
+        />
+
+        <InfoBox>
+          Oyuncunu Coin veya
+          kazandığın GEN paketiyle
+          geliştirebilirsin.
+          Antrenmandaki oyuncu
+          maçlarda kullanılamaz.
+        </InfoBox>
+
+        <div className="notice">
+          📦 +1:{" "}
+          {
+            game
+              .upgradePacks
+              .gen1
+          }{" "}
+          • +2:{" "}
+          {
+            game
+              .upgradePacks
+              .gen2
+          }{" "}
+          • +4:{" "}
+          {
+            game
+              .upgradePacks
+              .gen4
+          }
+        </div>
+
+        {game.training &&
+        currentPlayer ? (
+          <div className="panel">
+            <h2>
+              🏋️{" "}
+              {
+                currentPlayer.name
+              }
+            </h2>
+
+            <p>
+              Kalan:{" "}
+              <strong>
+                {millisecondsToClock(
+                  Math.max(
+                    0,
+                    game.training
+                      .endsAt -
+                      now
+                  )
+                )}
+              </strong>
+            </p>
+
+            <button
+              type="button"
+              className="gold-button"
+              onClick={
+                finishTrainingNow
+              }
+            >
+              ⚡ HEMEN BİTİR •{" "}
+              {calculateSpeedUpCost(
+                game.training,
+                now
+              )}{" "}
+              COIN
+            </button>
+          </div>
+        ) : (
+          <>
+            <h2>
+              Oyuncu Seç
+            </h2>
+
+            <div className="player-grid">
+              {ownedPlayers.map(
+                (player) => (
+                  <PlayerCard
+                    key={
+                      player.id
+                    }
+                    player={
+                      player
+                    }
+                    selected={
+                      selectedTrainingPlayer ===
+                      player.id
+                    }
+                    disabled={
+                      isPlayerBusy(
+                        player,
+                        game
+                      )
+                    }
+                    onClick={() =>
+                      setSelectedTrainingPlayer(
+                        player.id
+                      )
+                    }
+                  />
+                )
+              )}
+            </div>
+
+            <h2 style={{
+              marginTop: 24,
+            }}>
+              Program
+            </h2>
+
+            <div className="list-grid">
+              {trainingPlans.map(
+                (plan) => {
+                  const player =
+                    game.collection.find(
+                      (item) =>
+                        item.id ===
+                        selectedTrainingPlayer
+                    );
+
+                  const cost =
+                    player
+                      ? calculateTrainingCost(
+                          plan,
+                          player.overall
+                        )
+                      : 0;
+
+                  return (
+                    <div
+                      key={
+                        plan.id
+                      }
+                      className="list-item"
+                    >
+                      <div>
+                        <h3>
+                          {
+                            plan.title
+                          }
+                        </h3>
+
+                        <p>
+                          {
+                            plan.duration
+                          }{" "}
+                          • +
+                          {
+                            plan.gain
+                          }{" "}
+                          GEN
+                        </p>
+                      </div>
+
+                      <div className="action-row">
+                        <button
+                          type="button"
+                          className="gold-button"
+                          onClick={() =>
+                            startTraining(
+                              plan,
+                              false
+                            )
+                          }
+                        >
+                          🪙{" "}
+                          {
+                            cost
+                          }
+                        </button>
+
+                        <button
+                          type="button"
+                          className="green-button"
+                          onClick={() =>
+                            startTraining(
+                              plan,
+                              true
+                            )
+                          }
+                        >
+                          📦{" "}
+                          {
+                            game
+                              .upgradePacks[
+                              plan
+                                .packType
+                            ]
+                          }
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  function CoachesScreen() {
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="ANTRENÖR MERKEZİ"
+          subtitle="Uzun vadeli oyuncu gelişimi"
+        />
+
+        <InfoBox>
+          Antrenör satın alındıktan
+          sonra belirli sayıda
+          oyuncuyu çalıştırır.
+          Süre bittiğinde yeniden
+          oyuncu göndermen gerekir.
+        </InfoBox>
+
+        <div className="coach-grid">
+          {coachConfigs.map(
+            (coach) => {
+              const owned =
+                game.coaches.ownedStars.includes(
+                  coach.stars
+                );
+
+              const session =
+                game.coaches.activeSessions.find(
+                  (item) =>
+                    item.stars ===
+                      coach.stars &&
+                    !item.finished &&
+                    item.endsAt >
+                      now
+                );
+
+              return (
+                <div
+                  key={
+                    coach.stars
+                  }
+                  className="coach-card"
+                >
+                  <div>
+                    {"⭐".repeat(
+                      coach.stars
+                    )}
+                  </div>
+
+                  <h3>
+                    {
+                      coach.name
+                    }
+                  </h3>
+
+                  <p>
+                    {
+                      coach.slots
+                    }{" "}
+                    oyuncu •{" "}
+                    {
+                      coach.minutes
+                    }{" "}
+                    dk • kişi başı
+                    +1 GEN
+                  </p>
+
+                  {session ? (
+                    <div className="status-pill">
+                      ÇALIŞIYOR •{" "}
+                      {millisecondsToClock(
+                        session.endsAt -
+                          now
+                      )}
+                    </div>
+                  ) : owned ? (
+                    <button
+                      type="button"
+                      className="green-button"
+                      onClick={() =>
+                        startCoachSession(
+                          coach
+                        )
+                      }
+                    >
+                      OYUNCU GÖNDER
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="gold-button"
+                      onClick={() =>
+                        buyCoach(
+                          coach
+                        )
+                      }
+                    >
+                      SATIN AL •{" "}
+                      {coach.price.toLocaleString()}
+                    </button>
+                  )}
+                </div>
+              );
+            }
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function RentalScreen() {
+    if (
+      !game.rentalCenter
+        .unlocked
+    ) {
+      return (
+        <div className="page-card">
+          <PageHeader
+            title="KİRALIK OYUNCU MERKEZİ"
+            subtitle="Oyuncularından pasif gelir kazan"
+          />
+
+          <InfoBox>
+            Oyuncuyu maksimum 8
+            saat kiraya gönder.
+            Kiradayken maçlarda
+            kullanılamaz. Kazanç
+            merkezde birikir ve
+            sen PARAYI TOPLA
+            dediğinde hesabına
+            geçer.
+          </InfoBox>
+
+          <div className="panel">
+            <div className="big-number">
+              🪙 1.000
+            </div>
+
+            <p>
+              Kiralık Oyuncu
+              Merkezi'ni aç.
+            </p>
+
+            <button
+              type="button"
+              className="gold-button"
+              onClick={
+                unlockRentalCenter
+              }
+            >
+              MERKEZİ AÇ
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const activeRentals =
+      game.rentalCenter.rentals.filter(
+        (rental) =>
+          !rental.finished &&
+          rental.endsAt >
+            now
+      );
+
+    const nextSlotPrice =
+      rentalCenterConfig
+        .slotPrices[
+          game.rentalCenter
+            .slotsUnlocked
+        ];
+
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="KİRALIK OYUNCU MERKEZİ"
+          subtitle={`${activeRentals.length}/${game.rentalCenter.slotsUnlocked} slot kullanımda`}
+        />
+
+        <InfoBox>
+          8 saatlik kazanç
+          yaklaşık oyuncunun GEN ×
+          80 değeridir. Oyuncuyu
+          erken çağırırsan o ana
+          kadar oluşan kazancı
+          alırsın.
+        </InfoBox>
+
+        <div className="panel">
+          <span>
+            Birikmiş Kazanç
           </span>
 
-          <PlayerCard
-            player={
-              reveal.opponent
+          <div className="big-number">
+            🪙{" "}
+            {game.rentalCenter.pendingCoins.toLocaleString()}
+          </div>
+
+          <button
+            type="button"
+            className="gold-button"
+            disabled={
+              game.rentalCenter
+                .pendingCoins <= 0
             }
-            compact
-          />
+            onClick={
+              collectRentalMoney
+            }
+          >
+            PARAYI TOPLA
+          </button>
+        </div>
+
+        {nextSlotPrice !==
+          undefined && (
+          <button
+            type="button"
+            className="blue-button"
+            style={{
+              width: "100%",
+              marginTop: 12,
+            }}
+            onClick={
+              unlockRentalSlot
+            }
+          >
+            + YENİ SLOT AÇ •{" "}
+            {nextSlotPrice.toLocaleString()}
+          </button>
+        )}
+
+        <h2>
+          Kiradaki Oyuncular
+        </h2>
+
+        <div className="rental-slot-grid">
+          {activeRentals.map(
+            (rental) => {
+              const player =
+                game.collection.find(
+                  (item) =>
+                    item.id ===
+                    rental.playerId
+                );
+
+              return (
+                <div
+                  key={
+                    rental.id
+                  }
+                  className="rental-slot"
+                >
+                  <strong>
+                    {player?.name}
+                  </strong>
+
+                  <p>
+                    {
+                      player?.overall
+                    }{" "}
+                    GEN
+                  </p>
+
+                  <p>
+                    Kalan:{" "}
+                    {millisecondsToClock(
+                      rental.endsAt -
+                        now
+                    )}
+                  </p>
+
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      recallRental(
+                        rental
+                      )
+                    }
+                  >
+                    GERİ ÇAĞIR
+                  </button>
+                </div>
+              );
+            }
+          )}
+        </div>
+
+        <h2>
+          Oyuncu Gönder
+        </h2>
+
+        <div className="player-grid">
+          {ownedPlayers.map(
+            (player) => (
+              <div
+                key={
+                  player.id
+                }
+              >
+                <PlayerCard
+                  player={
+                    player
+                  }
+                  disabled={
+                    isPlayerBusy(
+                      player,
+                      game
+                    )
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="blue-button"
+                  style={{
+                    width:
+                      "100%",
+                    marginTop:
+                      6,
+                  }}
+                  onClick={() =>
+                    rentPlayer(
+                      player
+                    )
+                  }
+                >
+                  KİRAYA VER
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function EventsScreen() {
+    const eventState =
+      game.events[
+        activeEventId
+      ];
+
+    const cooldown =
+      getEventCooldownRemaining(
+        eventState,
+        now
+      );
+
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="ETKİNLİK"
+          subtitle={`Aşama ${game.activeStage}`}
+        />
+
+        <InfoBox>
+          Her galibiyetten sonra
+          üç kapalı karttan birini
+          seçersin. Ayrıca her
+          maçtan GEN paketi
+          kazanırsın. Maçlar
+          arasında 30 saniye
+          bekleme vardır.
+        </InfoBox>
+
+        <div className="tabs">
+          {eventConfigs.map(
+            (event) => {
+              const unlocked =
+                event.stage <=
+                game.activeStage;
+
+              return (
+                <button
+                  type="button"
+                  key={
+                    event.id
+                  }
+                  className={`tab-button ${
+                    activeEventId ===
+                    event.id
+                      ? "active"
+                      : ""
+                  }`}
+                  disabled={
+                    !unlocked
+                  }
+                  onClick={() =>
+                    setActiveEventId(
+                      event.id
+                    )
+                  }
+                >
+                  {
+                    event.icon
+                  }{" "}
+                  {
+                    event.name
+                  }
+                </button>
+              );
+            }
+          )}
+        </div>
+
+        <div className="panel">
+          <h2>
+            {
+              activeEvent.icon
+            }{" "}
+            {
+              activeEvent.name
+            }
+          </h2>
+
+          <p>
+            Maç{" "}
+            {
+              eventState.match
+            }{" "}
+            /{" "}
+            {
+              activeEvent.matches
+            }
+          </p>
+
+          <p>
+            {
+              activeEvent.currencyIcon
+            }{" "}
+            {
+              eventState.currency
+            }{" "}
+            {
+              activeEvent.currencyName
+            }
+          </p>
+
+          {cooldown >
+          0 ? (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled
+            >
+              SONRAKİ MAÇ{" "}
+              {millisecondsToClock(
+                cooldown
+              )}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="blue-button"
+              onClick={() =>
+                createBattle(
+                  "event"
+                )
+              }
+            >
+              MAÇA GİR
+            </button>
+          )}
+        </div>
+
+        <h2>
+          Etkinlik Transferleri
+        </h2>
+
+        <div className="player-grid">
+          {eventState.shop.map(
+            (player) => (
+              <div
+                key={
+                  player.id
+                }
+              >
+                <PlayerCard
+                  player={
+                    player
+                  }
+                  price={
+                    player.eventPrice
+                  }
+                  currencyIcon={
+                    activeEvent.currencyIcon
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="blue-button"
+                  style={{
+                    width:
+                      "100%",
+                    marginTop:
+                      6,
+                  }}
+                  onClick={() =>
+                    confirmBuyEvent(
+                      player,
+                      activeEventId
+                    )
+                  }
+                >
+                  SATIN AL
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function CareerScreen() {
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="🔥 KARİYER"
+          subtitle={`Aşama ${game.activeStage} • Maç ${game.career.match}/10`}
+        />
+
+        <InfoBox>
+          Kariyer ve etkinlik
+          birlikte ilerler. Her
+          kariyer galibiyetinde üç
+          rakip kart arasından bir
+          oyuncu seçersin.
+          Beraberlikte kayıp olmaz
+          ve yarım Coin ödülü
+          alırsın.
+        </InfoBox>
+
+        <div className="panel">
+          <p>
+            Kullanım sınırı
+          </p>
+
+          <div className="big-number">
+            {stageCap} GEN
+          </div>
+
+          <p>
+            Kariyer maçı için en
+            az 11 aktif oyuncu
+            gerekir.
+          </p>
+
+          <button
+            type="button"
+            className="danger-button"
+            onClick={() =>
+              createBattle(
+                "career"
+              )
+            }
+          >
+            🔥 KARİYER MAÇINA
+            GİR
+          </button>
         </div>
       </div>
     );
@@ -2968,70 +6213,110 @@ function App() {
       return null;
     }
 
-    const remainingCards =
-      battle.playerHand.filter(
-        (player) =>
-          !battle.usedPlayerIds.includes(
-            player.id
-          )
+    const currentGroup =
+      battle.groupOrder[
+        Math.min(
+          battle.round,
+          battle.groupOrder
+            .length - 1
+        )
+      ];
+
+    const available =
+      battle.playerDeck.filter(
+        (player) => {
+          const group =
+            player.positionGroup ||
+            getPositionGroup(
+              player.position
+            );
+
+          return (
+            group ===
+              currentGroup &&
+            !battle.usedPlayerIds.includes(
+              player.id
+            )
+          );
+        }
       );
 
-    const isCareer =
-      battle.mode ===
-      "career";
+    if (
+      battle.phase ===
+        "reward-select" ||
+      battle.phase ===
+        "career-reward-select"
+    ) {
+      return (
+        <div className="page-card">
+          <h1 className="section-title">
+            🎁 KARTINI SEÇ
+          </h1>
 
-    const event =
-      battle.eventId
-        ? getEventConfig(
-            battle.eventId
-          )
-        : null;
+          <p className="section-subtitle">
+            Sadece bir kart
+            açabilirsin. Seçtiğin
+            oyuncu senin olacak.
+          </p>
 
-    const league =
-      isCareer
-        ? careerLeagues[
-            battle.leagueIndex
-          ]
-        : null;
-
-    const battleTitle =
-      isCareer
-        ? `${league.name} • MAÇ ${battle.match}`
-        : `${event.icon} ${event.name} • MAÇ ${battle.match}`;
+          <div
+            className="reward-grid"
+            style={{
+              marginTop: 18,
+            }}
+          >
+            {battle.rewardChoices.map(
+              (player) => (
+                <button
+                  type="button"
+                  key={
+                    player.id
+                  }
+                  className="reward-card-back"
+                  onClick={() =>
+                    claimRewardChoice(
+                      player
+                    )
+                  }
+                >
+                  ?
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      );
+    }
 
     if (
       battle.phase ===
       "loss-select"
     ) {
       return (
-        <section className="battle-screen loss-screen">
-          <div className="section-label">
+        <div className="page-card">
+          <h1 className="section-title">
             KARİYER CEZASI
-          </div>
-
-          <h1>
-            1 KARTINI VER
           </h1>
 
-          <p>
+          <p className="section-subtitle">
             Maçı kaybettin.
-            Bu maça getirdiğin
-            10 karttan birini
-            rakip kulübe vermek
-            zorundasın.
+            Minimum kadro yapısını
+            bozmayan kartlardan
+            birini kaybedeceksin.
           </p>
 
-          <div className="loss-grid">
-            {battle.playerDeck.map(
+          <div className="player-grid">
+            {battle.lossCandidates.map(
               (player) => (
                 <PlayerCard
                   key={
                     player.id
                   }
-                  player={player}
-                  compact
+                  player={
+                    player
+                  }
                   onClick={() =>
-                    giveCareerCard(
+                    loseCareerPlayer(
                       player
                     )
                   }
@@ -3039,7 +6324,7 @@ function App() {
               )
             )}
           </div>
-        </section>
+        </div>
       );
     }
 
@@ -3047,297 +6332,161 @@ function App() {
       battle.phase ===
       "finished"
     ) {
-      return (
-        <section className="battle-screen battle-finished">
-          <div className="section-label">
-            MAÇ SONU
-          </div>
+      const result =
+        battle.result;
 
-          <h1
-            className={
-              battle.result
-                .won
-                ? "victory-text"
-                : "defeat-text"
-            }
-          >
-            {battle.result
-              .won
-              ? "GALİBİYET"
-              : "MAĞLUBİYET"}
+      return (
+        <div className="page-card">
+          <h1 className="section-title">
+            {result?.type ===
+            "win"
+              ? "🏆 GALİBİYET"
+              : result?.type ===
+                  "draw"
+                ? "🤝 BERABERE"
+                : "❌ MAĞLUBİYET"}
           </h1>
 
-          <div className="final-score">
-            {battle.playerScore}
-            <span>-</span>
-            {battle.opponentScore}
-          </div>
-
-          {battle.result
-            .sudden && (
-            <div className="result-note">
-              SUDDEN DEATH
+          {result?.type ===
+            "draw" && (
+            <div className="notice">
+              Beraberlikte kart
+              kaybı yok. Yarım
+              ödül: 🪙{" "}
+              {
+                result.coinReward
+              }
             </div>
           )}
 
-          {battle.mode ===
-            "event" &&
-            battle.result
-              .won && (
-              <>
-                <div className="reward-banner">
-                  {event.currencyIcon}{" "}
-                  +
-                  {battle.result.currencyReward}{" "}
-                  {event.currencyName}
-                </div>
-
-                {battle.result
-                  .rewardPlayer && (
-                  <div className="reward-player">
-                    <div className="section-label">
-                      FUTBOLCU ÖDÜLÜ
-                    </div>
-
-                    <PlayerCard
-                      player={
-                        battle.result
-                          .rewardPlayer
-                      }
-                    />
-                  </div>
-                )}
-
-                {battle.result
-                  .eventCompleted && (
-                  <div className="unlock-banner">
-                    ETKİNLİK TAMAMLANDI • GELİŞİM SINIRI{" "}
-                    {event.unlockCap}{" "}
-                    GEN
-                  </div>
-                )}
-              </>
-            )}
-
-          {battle.mode ===
-            "event" &&
-            !battle.result
-              .won && (
-              <p className="result-copy">
-                Etkinlikte kart
-                kaybetmezsin.
-                Aynı maçı tekrar
-                deneyebilirsin.
-              </p>
-            )}
-
-          {battle.mode ===
-            "career" &&
-            battle.result
-              .won && (
-              <>
-                <div className="reward-banner">
-                  🪙 +
-                  {battle.result.coinReward}{" "}
-                  COIN
-                </div>
-
-                <div className="reward-player">
-                  <div className="section-label">
-                    RAKİPTEN KAZANDIĞIN KART
-                  </div>
-
-                  <PlayerCard
-                    player={
-                      battle.result
-                        .rewardPlayer
-                    }
-                  />
-                </div>
-              </>
-            )}
-
-          {battle.mode ===
-            "career" &&
-            !battle.result
-              .won &&
-            battle.result
-              .lostPlayer && (
-              <div className="reward-player lost-player">
-                <div className="section-label">
-                  RAKİBE GİDEN KART
-                </div>
-
-                <PlayerCard
-                  player={
-                    battle.result
-                      .lostPlayer
-                  }
-                />
-              </div>
-            )}
+          {result?.rewardPlayer && (
+            <div className="notice">
+              🎁{" "}
+              {
+                result
+                  .rewardPlayer
+                  .name
+              }{" "}
+              senin oldu.
+            </div>
+          )}
 
           <button
             type="button"
-            className="primary-wide-button"
-            onClick={closeBattle}
+            className="primary-button"
+            onClick={() => {
+              setBattle(null);
+
+              setScreen(
+                battle.mode ===
+                  "event"
+                  ? "events"
+                  : "career"
+              );
+            }}
           >
             DEVAM ET
           </button>
-        </section>
-      );
-    }
-
-    if (
-      battle.phase ===
-      "sudden"
-    ) {
-      return (
-        <section className="battle-screen">
-          <div className="battle-heading-row">
-            <div>
-              <div className="section-label">
-                {battleTitle}
-              </div>
-
-              <h1>
-                SUDDEN DEATH
-              </h1>
-            </div>
-
-            <BattleScore
-              battle={battle}
-            />
-          </div>
-
-          {!battle.reveal ? (
-            <>
-              <div className="opponent-zone">
-                <CardBack />
-              </div>
-
-              <div className="battle-message">
-                İki yedek
-                kartından birini
-                seç.
-              </div>
-
-              <div className="sudden-grid">
-                {battle.suddenChoices.map(
-                  (player) => (
-                    <PlayerCard
-                      key={
-                        player.id
-                      }
-                      player={player}
-                      compact
-                      onClick={() =>
-                        playSuddenCard(
-                          player
-                        )
-                      }
-                    />
-                  )
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <RevealArena
-                reveal={
-                  battle.reveal
-                }
-              />
-
-              <div
-                className={`round-result ${
-                  battle.result
-                    .won
-                    ? "round-win"
-                    : "round-loss"
-                }`}
-              >
-                {battle.result
-                  .won
-                  ? "MAÇ SENİN"
-                  : "RAKİP KAZANDI"}
-              </div>
-
-              <button
-                type="button"
-                className="primary-wide-button"
-                onClick={
-                  finishSuddenDeath
-                }
-              >
-                MAÇ SONUCUNU GÖR
-              </button>
-            </>
-          )}
-        </section>
+        </div>
       );
     }
 
     return (
-      <section className="battle-screen">
-        <div className="battle-heading-row">
+      <div className="page-card">
+        <button
+          type="button"
+          className="back-button"
+          onClick={() =>
+            setBattle(null)
+          }
+        >
+          ← MAÇTAN ÇIK
+        </button>
+
+        <div className="battle-score">
           <div>
-            <div className="section-label">
-              {battleTitle}
-            </div>
+            <span>
+              SEN
+            </span>
 
-            <h1>
-              RAUND{" "}
-              {battle.round + 1}
-              /5
-            </h1>
-          </div>
-
-          <BattleScore
-            battle={battle}
-          />
-        </div>
-
-        <div className="opponent-zone">
-          <div className="zone-title">
-            RAKİBİN KARTI
-          </div>
-
-          {!battle.reveal ? (
-            <CardBack />
-          ) : (
-            <PlayerCard
-              player={
-                battle.reveal
-                  .opponent
+            <strong>
+              {
+                battle.playerScore
               }
-              compact
-            />
-          )}
+            </strong>
+          </div>
+
+          <b>:</b>
+
+          <div>
+            <span>
+              RAKİP
+            </span>
+
+            <strong>
+              {
+                battle.opponentScore
+              }
+            </strong>
+          </div>
         </div>
 
-        {!battle.reveal ? (
+        {battle.phase ===
+          "playing" && (
           <>
-            <div className="battle-message">
-              Rakip kartını
-              attı.{" "}
-              <strong>
-                Şimdi kartını
-                seç.
-              </strong>
+            <div className="battle-group">
+              TUR{" "}
+              {battle.round +
+                1}{" "}
+              •{" "}
+              {
+                positionGroups[
+                  currentGroup
+                ].name
+              }
             </div>
+
+            {battle.reveal && (
+              <div className="notice">
+                Sen:{" "}
+                {
+                  battle.reveal
+                    .player.name
+                }{" "}
+                (
+                {
+                  battle.reveal
+                    .player
+                    .overall
+                }
+                ) • Rakip:{" "}
+                {
+                  battle.reveal
+                    .opponent
+                    .name
+                }{" "}
+                (
+                {
+                  battle.reveal
+                    .opponent
+                    .overall
+                }
+                )
+              </div>
+            )}
 
             <div className="battle-hand">
-              {remainingCards.map(
+              {available.map(
                 (player) => (
                   <PlayerCard
                     key={
                       player.id
                     }
-                    player={player}
-                    compact
+                    player={
+                      player
+                    }
                     onClick={() =>
-                      playBattleCard(
+                      chooseBattlePlayer(
                         player
                       )
                     }
@@ -3346,1466 +6495,553 @@ function App() {
               )}
             </div>
           </>
-        ) : (
+        )}
+
+        {battle.phase ===
+          "result-ready" && (
           <>
-            <RevealArena
-              reveal={
-                battle.reveal
-              }
-            />
-
-            <div
-              className={`round-result ${
-                battle.reveal
-                  .result ===
-                "win"
-                  ? "round-win"
-                  : battle.reveal
-                        .result ===
-                      "loss"
-                    ? "round-loss"
-                    : "round-draw"
-              }`}
-            >
-              {battle.reveal
-                .result ===
-              "win"
-                ? "RAUND SENİN"
-                : battle.reveal
-                      .result ===
-                    "loss"
-                  ? "RAKİP RAUNDU ALDI"
-                  : "BERABERE"}
+            <div className="notice">
+              5 tur tamamlandı.
             </div>
-
-            <button
-              type="button"
-              className="primary-wide-button"
-              onClick={
-                nextBattleRound
-              }
-            >
-              {battle.round ===
-              4
-                ? "MAÇI TAMAMLA"
-                : "SONRAKİ RAUND"}
-            </button>
-          </>
-        )}
-
-        {battle.history
-          .length > 0 && (
-          <div className="round-history">
-            {battle.history.map(
-              (round) => (
-                <div
-                  className="history-pill"
-                  key={
-                    round.round
-                  }
-                >
-                  R{round.round}
-                  {" • "}
-                  {round.player.overall}
-                  -
-                  {round.opponent.overall}
-                  {" • "}
-                  {round.result ===
-                  "win"
-                    ? "W"
-                    : round.result ===
-                        "loss"
-                      ? "L"
-                      : "D"}
-                </div>
-              )
-            )}
-          </div>
-        )}
-      </section>
-    );
-  }
-
-  if (!started) {
-    return (
-      <div className="intro-screen">
-        <div className="intro-content">
-          <img
-            src={`${
-              import.meta.env
-                .BASE_URL
-            }icons/icon.svg`}
-            alt="Soccer Cards War"
-            className="intro-logo"
-          />
-
-          <div className="publisher">
-            EL TURCO
-          </div>
-
-          <div className="presents">
-            PRESENTS
-          </div>
-
-          <h1 className="game-logo-title">
-            SOCCER{" "}
-            <span>
-              CARDS WAR
-            </span>
-          </h1>
-
-          <div className="gold-line" />
-
-          <p className="intro-text">
-            Kartlarını topla.
-            Kulübünü kur.
-            Kendi yıldızını
-            geliştir. Kart
-            savaşlarını kazan.
-          </p>
-
-          <button
-            type="button"
-            className="main-button"
-            onClick={() =>
-              setStarted(true)
-            }
-          >
-            OYUNA GİR
-          </button>
-
-          <div className="version">
-            EL TURCO • v1.0
-            BUILD
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!game.clubName) {
-    return (
-      <div className="setup-screen">
-        <Notice />
-
-        <div className="setup-box">
-          <div className="section-label">
-            YENİ KULÜP
-          </div>
-
-          <h1>
-            KULÜBÜNÜ KUR
-          </h1>
-
-          <p>
-            Takımının adını
-            sen belirle.
-            Başlangıçta 10 adet
-            10–22 GEN futbolcu
-            alırsın.
-          </p>
-
-          <input
-            value={
-              clubNameInput
-            }
-            onChange={(event) =>
-              setClubNameInput(
-                event.target
-                  .value
-              )
-            }
-            maxLength={24}
-            placeholder="Kulüp adı"
-          />
-
-          <button
-            type="button"
-            className="primary-wide-button"
-            onClick={createClub}
-          >
-            KULÜBÜ OLUŞTUR
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (screen === "squad") {
-    return (
-      <div className="game-screen">
-        <TopBar />
-        <Notice />
-
-        <main className="page-content">
-          <BackButton
-            onClick={goHome}
-          />
-
-          <PageHeading
-            label="10 KARTLIK DESTE"
-            title="TAKIMIM"
-            text="Maçta bu 10 karttan rastgele 5 tanesi eline gelir."
-            stat={`${teamOverall} GEN`}
-          />
-
-          <div className="squad-counter">
-            {game.squad.length}
-            /10
-          </div>
-
-          <div className="collection-grid">
-            {game.collection
-              .slice()
-              .sort(
-                (a, b) =>
-                  b.overall -
-                  a.overall
-              )
-              .map(
-                (player) => (
-                  <PlayerCard
-                    key={
-                      player.id
-                    }
-                    player={player}
-                    selected={
-                      game.squad.includes(
-                        player.id
-                      )
-                    }
-                    onClick={() =>
-                      toggleSquadPlayer(
-                        player.id
-                      )
-                    }
-                  />
-                )
-              )}
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (
-    screen ===
-    "collection"
-  ) {
-    return (
-      <div className="game-screen">
-        <TopBar />
-        <Notice />
-
-        <main className="page-content">
-          <BackButton
-            onClick={goHome}
-          />
-
-          <PageHeading
-            label="FUTBOLCULARIM"
-            title="KOLEKSİYON"
-            text={`Toplam ${game.collection.length} kartın var.`}
-            stat={`${game.collection.length} KART`}
-          />
-
-          <div className="collection-grid">
-            {game.collection
-              .slice()
-              .sort(
-                (a, b) =>
-                  b.overall -
-                  a.overall
-              )
-              .map(
-                (player) => (
-                  <PlayerCard
-                    key={
-                      player.id
-                    }
-                    player={player}
-                    selected={
-                      game.squad.includes(
-                        player.id
-                      )
-                    }
-                  />
-                )
-              )}
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (
-    screen === "training"
-  ) {
-    const remaining =
-      game.training
-        ? game.training
-            .endsAt -
-          now
-        : 0;
-
-    return (
-      <div className="game-screen">
-        <TopBar />
-        <Notice />
-
-        <main className="page-content">
-          <BackButton
-            onClick={goHome}
-          />
-
-          <PageHeading
-            label="GELİŞİM MERKEZİ"
-            title="ANTRENMAN"
-            text="Coin harca, gerçek zamanlı çalıştır ve futbolcularını geliştir. İstersen kalan süreyi Coin ile anında bitir."
-            stat={`${game.trainingCap} MAX`}
-          />
-
-          {game.training && (
-            <div className="training-running">
-              <div>
-                <span>
-                  ANTRENMAN DEVAM EDİYOR
-                </span>
-
-                <h2>
-                  {game.training.playerName}
-                </h2>
-
-                <p>
-                  {game.training.planName}
-                </p>
-              </div>
-
-              <div className="training-time">
-                {formatTime(
-                  remaining
-                )}
-              </div>
-
-              <div className="training-speed-box">
-                <div className="training-speed-cost">
-                  HIZLANDIRMA: 🪙 {trainingSpeedCost.toLocaleString()}
-                </div>
-
-                <button
-                  type="button"
-                  className="training-speed-button"
-                  disabled={
-                    trainingSpeedCost <=
-                    0
-                  }
-                  onClick={
-                    speedUpTraining
-                  }
-                >
-                  ⚡ HEMEN BİTİR
-                </button>
-              </div>
-            </div>
-          )}
-
-          <h2 className="screen-subtitle">
-            1. FUTBOLCUYU SEÇ
-          </h2>
-
-          <div className="collection-grid">
-            {game.collection
-              .slice()
-              .sort(
-                (a, b) =>
-                  b.overall -
-                  a.overall
-              )
-              .map(
-                (player) => (
-                  <PlayerCard
-                    key={
-                      player.id
-                    }
-                    player={player}
-                    selected={
-                      trainingPlayerId ===
-                      player.id
-                    }
-                    onClick={() =>
-                      setTrainingPlayerId(
-                        player.id
-                      )
-                    }
-                  />
-                )
-              )}
-          </div>
-
-          <h2 className="screen-subtitle program-heading">
-            2. PROGRAMI SEÇ
-          </h2>
-
-          <div className="training-plans">
-            {trainingPlans.map(
-              (plan) => {
-                const cost =
-                  calculateTrainingCost(
-                    plan,
-                    trainingPlayer
-                      ?.overall ||
-                      15
-                  );
-
-                return (
-                  <button
-                    type="button"
-                    key={
-                      plan.id
-                    }
-                    className="training-plan"
-                    onClick={() =>
-                      startTraining(
-                        plan
-                      )
-                    }
-                  >
-                    <span>
-                      {plan.duration}
-                    </span>
-
-                    <h3>
-                      {plan.title}
-                    </h3>
-
-                    <strong>
-                      +{plan.gain}{" "}
-                      GEN
-                    </strong>
-
-                    <small>
-                      🪙{" "}
-                      {cost.toLocaleString()}
-                    </small>
-                  </button>
-                );
-              }
-            )}
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (
-    screen ===
-    "transfers"
-  ) {
-    return (
-      <div className="game-screen">
-        <TopBar />
-        <Notice />
-
-        <main className="page-content">
-          <BackButton
-            onClick={goHome}
-          />
-
-          <PageHeading
-            label="KULÜP YÖNETİMİ"
-            title="TRANSFERLER"
-            text="GEN yükseldikçe fiyat yükselir. Artık kendi oyuncularını da satabilirsin."
-            stat={`MAX ${game.marketCap}`}
-          />
-
-          <div className="custom-player-box">
-            <div>
-              <div className="section-label">
-                KENDİ YILDIZINI YARAT
-              </div>
-
-              <h2>
-                FUTBOLCU OLUŞTUR
-              </h2>
-
-              <p>
-                15 GEN başlar.
-                Onu antrenmanlarla
-                oyunun sonuna kadar
-                geliştirebilirsin.
-              </p>
-            </div>
-
-            <div className="custom-player-form">
-              <input
-                value={
-                  customName
-                }
-                onChange={(event) =>
-                  setCustomName(
-                    event.target
-                      .value
-                  )
-                }
-                placeholder="Oyuncu adı"
-                maxLength={24}
-              />
-
-              <select
-                value={
-                  customPosition
-                }
-                onChange={(event) =>
-                  setCustomPosition(
-                    event.target
-                      .value
-                  )
-                }
-              >
-                {positions.map(
-                  (position) => (
-                    <option
-                      key={
-                        position
-                      }
-                      value={
-                        position
-                      }
-                    >
-                      {position}
-                    </option>
-                  )
-                )}
-              </select>
-
-              <button
-                type="button"
-                className="primary-button"
-                onClick={
-                  createMyPlayer
-                }
-              >
-                OLUŞTUR • 🪙 750
-              </button>
-            </div>
-          </div>
-
-          <div className="section-toolbar">
-            <h2 className="screen-subtitle">
-              TRANSFER PAZARI
-            </h2>
-
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={
-                refreshMarket
-              }
-            >
-              YENİLE • 🪙 100
-            </button>
-          </div>
-
-          <div className="collection-grid">
-            {game.market.map(
-              (player) => (
-                <PlayerCard
-                  key={
-                    player.id
-                  }
-                  player={player}
-                  price={
-                    player.price
-                  }
-                  onClick={() =>
-                    buyMarketPlayer(
-                      player.id
-                    )
-                  }
-                />
-              )
-            )}
-          </div>
-
-          <section className="sell-section">
-            <div className="section-label">
-              KULÜBÜMDEKİ OYUNCULAR
-            </div>
-
-            <h2 className="screen-subtitle">
-              OYUNCU SAT
-            </h2>
-
-            <p className="result-copy">
-              Oyuncular güncel piyasa değerinin %60'ına satılır. Satılan oyuncu takımdaysa otomatik olarak desteden de çıkar.
-            </p>
-
-            <div className="sell-grid">
-              {game.collection
-                .slice()
-                .sort(
-                  (a, b) =>
-                    b.overall -
-                    a.overall
-                )
-                .map(
-                  (player) => {
-                    const sellPrice =
-                      calculateSellPrice(
-                        player
-                      );
-
-                    const isTraining =
-                      game.training
-                        ?.playerId ===
-                      player.id;
-
-                    return (
-                      <div
-                        className="sell-player-box"
-                        key={
-                          player.id
-                        }
-                      >
-                        <PlayerCard
-                          player={player}
-                          compact
-                          selected={
-                            game.squad.includes(
-                              player.id
-                            )
-                          }
-                        />
-
-                        <button
-                          type="button"
-                          className="sell-button"
-                          disabled={
-                            isTraining
-                          }
-                          onClick={() =>
-                            sellOwnedPlayer(
-                              player.id
-                            )
-                          }
-                        >
-                          {isTraining
-                            ? "ANTRENMANDA"
-                            : `SAT • 🪙 ${sellPrice.toLocaleString()}`}
-                        </button>
-                      </div>
-                    );
-                  }
-                )}
-            </div>
-          </section>
-        </main>
-      </div>
-    );
-  }
-
-  if (
-    screen === "store"
-  ) {
-    const couponUsed =
-      game.redeemedCoupons.includes(
-        "samsun"
-      );
-
-    return (
-      <div className="game-screen">
-        <TopBar />
-        <Notice />
-
-        <main className="page-content">
-          <BackButton
-            onClick={goHome}
-          />
-
-          <PageHeading
-            label="SCW STORE"
-            title="MAĞAZA"
-            text="Coin paketleri, kupon kodları ve test satın alımları burada."
-            stat={`🪙 ${game.coins.toLocaleString()}`}
-          />
-
-          <div className="store-test-banner">
-            <strong>
-              {STORE_TEST_MODE
-                ? "🧪 TEST ÖDEME MODU"
-                : "💳 CANLI ÖDEME"}
-            </strong>
-
-            <span>
-              {STORE_TEST_MODE
-                ? "Butonlar gerçek ücret çekmeden Coin ekler."
-                : "Ödemeler güvenli ödeme sağlayıcısına yönlendirilir."}
-            </span>
-          </div>
-
-          <div className="coupon-box">
-            <div className="coupon-copy">
-              <div className="section-label">
-                KUPON KODU
-              </div>
-
-              <h2>
-                PROMOSYON
-              </h2>
-
-              <p>
-                Test kuponu bu kayıt için yalnızca bir kez kullanılabilir.
-              </p>
-            </div>
-
-            <input
-              value={
-                couponInput
-              }
-              onChange={(event) =>
-                setCouponInput(
-                  event.target.value
-                )
-              }
-              placeholder="Kupon kodu"
-              autoCapitalize="none"
-              disabled={couponUsed}
-            />
 
             <button
               type="button"
               className="primary-button"
               onClick={
-                redeemCoupon
+                settleBattle
               }
-              disabled={couponUsed}
             >
-              {couponUsed
-                ? "KULLANILDI"
-                : "KULLAN"}
+              SONUCU GÖR
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  function ProfileScreen() {
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="PROFİL"
+          subtitle={game.clubName}
+        />
+
+        <div className="profile-stat-grid">
+          <div className="profile-stat">
+            <span>
+              AKTİF OYUN SÜRESİ
+            </span>
+
+            <strong>
+              {formatPlayTime(
+                game.profile
+                  .playSeconds
+              )}
+            </strong>
+          </div>
+
+          <div className="profile-stat">
+            <span>
+              AŞAMA
+            </span>
+
+            <strong>
+              {
+                game.activeStage
+              }{" "}
+              / 10
+            </strong>
+          </div>
+
+          <div className="profile-stat">
+            <span>
+              AKTİF OYUNCU
+            </span>
+
+            <strong>
+              {
+                ownedPlayers.length
+              }
+            </strong>
+          </div>
+
+          <div className="profile-stat">
+            <span>
+              KARİYER GALİBİYETİ
+            </span>
+
+            <strong>
+              {
+                game.career
+                  .totalWins
+              }
+            </strong>
+          </div>
+        </div>
+
+        <h2>
+          Ayarlar
+        </h2>
+
+        <div className="panel">
+          <div className="setting-row">
+            <div>
+              <strong>
+                Bilgilendirmeler
+              </strong>
+
+              <p className="section-subtitle">
+                Bölüm açıklamalarını
+                göster.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className={`switch-button ${
+                game.profile
+                  .infoEnabled
+                  ? "on"
+                  : ""
+              }`}
+              onClick={
+                toggleInfo
+              }
+            >
+              {game.profile
+                .infoEnabled
+                ? "AÇIK"
+                : "KAPALI"}
             </button>
           </div>
 
-          <div className="section-label">
-            COIN PAKETLERİ
-          </div>
+          {[
+            [
+              "daily",
+              "Günlük ödül bildirimi",
+            ],
+            [
+              "training",
+              "Antrenman bildirimi",
+            ],
+            [
+              "rental",
+              "Kiralık oyuncu bildirimi",
+            ],
+          ].map(
+            ([key, label]) => (
+              <div
+                className="setting-row"
+                key={key}
+              >
+                <strong>
+                  🔔{" "}
+                  {label}
+                </strong>
 
-          <h2 className="screen-subtitle">
-            OYUN PARASI SATIN AL
-          </h2>
-
-          <div className="coin-pack-grid">
-            {COIN_PACKAGES.map(
-              (pack) => (
-                <div
-                  key={pack.id}
-                  className="coin-pack-card"
-                >
-                  <div className="coin-pack-icon">
-                    🪙
-                  </div>
-
-                  <h3>
-                    {pack.coins.toLocaleString()}
-                  </h3>
-
-                  <p>
-                    SCW COIN
-                  </p>
-
-                  <button
-                    type="button"
-                    className="primary-button"
-                    onClick={() =>
-                      buyCoinPackage(
-                        pack
-                      )
-                    }
-                  >
-                    {STORE_TEST_MODE
-                      ? `TEST • ${pack.price}`
-                      : `SATIN AL • ${pack.price}`}
-                  </button>
-                </div>
-              )
-            )}
-          </div>
-
-          <div className="store-security-note">
-            Canlı gerçek para ödemesinde Coin'i yalnızca tarayıcıdaki butona basıldığı için eklemek güvenli değildir. Canlı sürümde ödeme sağlayıcısının doğruladığı başarılı ödeme sonrası Coin verilmelidir. Bu yüzden bu build test modundadır.
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (screen === "events") {
-    if (battle) {
-      return (
-        <div className="game-screen">
-          <TopBar />
-
-          <main className="page-content battle-page">
-            <BattleScreen />
-          </main>
-        </div>
-      );
-    }
-
-    const opponentStrength =
-      eventOpponentStrength(
-        activeEvent,
-        activeEventState
-      );
-
-    const unlocked =
-      isEventUnlocked(
-        activeEventIndex
-      );
-
-    return (
-      <div className="game-screen">
-        <TopBar />
-        <Notice />
-
-        <main className="page-content">
-          <BackButton
-            onClick={goHome}
-          />
-
-          <PageHeading
-            label="ETKİNLİK YOLU"
-            title="ETKİNLİKLER"
-            text="Kart kaybı yok. Etkinlik parası kazan, özel mağazadan oyuncu al ve bir sonraki sahayı aç."
-            stat={`${eventConfigs.filter(
-              (_, index) =>
-                isEventUnlocked(
-                  index
-                )
-            ).length}/${eventConfigs.length}`}
-          />
-
-          <div className="event-selector">
-            {eventConfigs.map(
-              (
-                event,
-                index
-              ) => {
-                const eventState =
-                  game.events[
-                    event.id
-                  ];
-
-                const eventUnlocked =
-                  isEventUnlocked(
-                    index
-                  );
-
-                return (
-                  <button
-                    type="button"
-                    key={
-                      event.id
-                    }
-                    className={`event-selector-card ${
-                      activeEventId ===
-                      event.id
-                        ? "active"
-                        : ""
-                    }`}
-                    disabled={
-                      !eventUnlocked
-                    }
-                    onClick={() =>
-                      setActiveEventId(
-                        event.id
-                      )
-                    }
-                  >
-                    <span>
-                      {event.icon}
-                    </span>
-
-                    <div>
-                      <b>
-                        {event.name}
-                      </b>
-
-                      <small>
-                        {eventUnlocked
-                          ? eventState.completed
-                            ? "✓ TAMAMLANDI"
-                            : `${eventState.match}/${event.matches} MAÇ`
-                          : "🔒 KİLİTLİ"}
-                      </small>
-                    </div>
-                  </button>
-                );
-              }
-            )}
-          </div>
-
-          <section
-            className={`event-hero ${
-              unlocked
-                ? ""
-                : "locked-panel"
-            }`}
-          >
-            <div>
-              <div className="section-label">
-                ETKİNLİK{" "}
-                {activeEventIndex + 1}
-              </div>
-
-              <h1>
-                {activeEvent.icon}{" "}
-                {activeEvent.name}
-              </h1>
-
-              <p>
-                {activeEvent.matches}{" "}
-                maç •{" "}
-                {activeEvent.min}
-                –
-                {activeEvent.max}{" "}
-                GEN • Kart kaybı
-                yok.
-              </p>
-            </div>
-
-            <div className="event-currency">
-              {activeEvent.currencyIcon}{" "}
-              {activeEventState.currency.toLocaleString()}
-            </div>
-          </section>
-
-          <div className="event-stats">
-            <div>
-              <span>
-                İLERLEME
-              </span>
-              <strong>
-                {activeEventState.match}
-                /
-                {activeEvent.matches}
-              </strong>
-            </div>
-
-            <div>
-              <span>RAKİP</span>
-              <strong>
-                ~{opponentStrength}{" "}
-                GEN
-              </strong>
-            </div>
-
-            <div>
-              <span>DESTE</span>
-              <strong>
-                {game.squad.length}
-                /10
-              </strong>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="primary-wide-button"
-            disabled={
-              !unlocked ||
-              activeEventState.completed
-            }
-            onClick={() =>
-              startEventBattle(
-                activeEvent.id
-              )
-            }
-          >
-            {activeEventState.completed
-              ? "ETKİNLİK TAMAMLANDI"
-              : unlocked
-                ? `MAÇ ${activeEventState.match}'E GİR`
-                : "ÖNCEKİ ETKİNLİĞİ TAMAMLA"}
-          </button>
-
-          <div className="event-shop-heading">
-            <div>
-              <div className="section-label">
-                ETKİNLİK MAĞAZASI
-              </div>
-              <h2>
-                {activeEvent.name.toUpperCase()}{" "}
-                PAZARI
-              </h2>
-            </div>
-
-            <div className="event-currency small">
-              {activeEvent.currencyIcon}{" "}
-              {activeEventState.currency.toLocaleString()}
-            </div>
-          </div>
-
-          <div className="collection-grid">
-            {activeEventState.shop.map(
-              (player) => (
-                <PlayerCard
-                  key={
-                    player.id
-                  }
-                  player={player}
-                  price={
-                    player.eventPrice
-                  }
-                  currencyIcon={
-                    activeEvent.currencyIcon
-                  }
+                <button
+                  type="button"
+                  className={`switch-button ${
+                    game.profile
+                      .notifications[
+                      key
+                    ]
+                      ? "on"
+                      : ""
+                  }`}
                   onClick={() =>
-                    buyEventPlayer(
-                      activeEvent.id,
-                      player.id
+                    toggleNotification(
+                      key
                     )
                   }
-                />
-              )
-            )}
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (screen === "career") {
-    if (battle) {
-      return (
-        <div className="game-screen">
-          <TopBar />
-
-          <main className="page-content battle-page">
-            <BattleScreen />
-          </main>
-        </div>
-      );
-    }
-
-    const leagueIndex =
-      Math.min(
-        game.career
-          .leagueIndex,
-        careerLeagues.length -
-          1
-      );
-
-    const league =
-      careerLeagues[
-        leagueIndex
-      ];
-
-    const opponentStrength =
-      careerOpponentStrength();
-
-    return (
-      <div className="game-screen">
-        <TopBar />
-        <Notice />
-
-        <main className="page-content">
-          <BackButton
-            onClick={goHome}
-          />
-
-          <section className="career-hero">
-            <div>
-              <div className="section-label">
-                RİSK MODU
+                >
+                  {game.profile
+                    .notifications[
+                    key
+                  ]
+                    ? "AÇIK"
+                    : "KAPALI"}
+                </button>
               </div>
+            )
+          )}
 
-              <h1>
-                {game.career
-                  .completed
-                  ? "KARİYER TAMAMLANDI"
-                  : league.name}
-              </h1>
+          <div className="setting-row">
+            <div>
+              <strong>
+                Uygulama
+              </strong>
 
-              <p>
-                Kazanırsan
-                rakipten rastgele
-                bir kart ve Coin
-                alırsın.
-                Kaybedersen kendi
-                10 kartından birini
-                vermek zorundasın.
+              <p className="section-subtitle">
+                {installed
+                  ? "Bu cihazda kurulu."
+                  : "Telefona uygulama olarak yükle."}
               </p>
             </div>
 
-            <div className="risk-badge">
-              ⚠️ KART KAYBI AÇIK
-            </div>
-          </section>
-
-          <div className="career-stats">
-            <div>
-              <span>LİG</span>
-              <strong>
-                {leagueIndex + 1}
-                /
-                {careerLeagues.length}
-              </strong>
-            </div>
-
-            <div>
-              <span>MAÇ</span>
-              <strong>
-                {game.career.match}
-                /
-                {league.matches}
-              </strong>
-            </div>
-
-            <div>
-              <span>RAKİP</span>
-              <strong>
-                ~{opponentStrength}
-              </strong>
-            </div>
-
-            <div>
-              <span>
-                GALİBİYET
-              </span>
-              <strong>
-                {game.career.wins}
-              </strong>
-            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={
+                installApp
+              }
+            >
+              {installed
+                ? "KURULU"
+                : "YÜKLE"}
+            </button>
           </div>
+
+          <div className="setting-row">
+            <strong>
+              Oyunu Sıfırla
+            </strong>
+
+            <button
+              type="button"
+              className="danger-button"
+              onClick={
+                resetGame
+              }
+            >
+              SIFIRLA
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function StoreScreen() {
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="MAĞAZA"
+          subtitle="Şu anda test ödeme modu"
+        />
+
+        <div className="notice">
+          ⚠️ Gerçek para tahsilatı
+          henüz aktif değil.
+          Butonlar test için Coin
+          ekler.
+        </div>
+
+        <div className="shop-grid">
+          {COIN_PACKAGES.map(
+            (pack) => (
+              <div
+                key={
+                  pack.id
+                }
+                className="shop-card"
+              >
+                <div className="big-number">
+                  🪙{" "}
+                  {pack.coins.toLocaleString()}
+                </div>
+
+                <p>
+                  {pack.price}
+                </p>
+
+                <button
+                  type="button"
+                  className="gold-button"
+                  onClick={() =>
+                    buyTestCoins(
+                      pack
+                    )
+                  }
+                >
+                  TEST SATIN AL
+                </button>
+              </div>
+            )
+          )}
+        </div>
+
+        <h2>
+          Test Kuponu
+        </h2>
+
+        <div className="panel">
+          <input
+            className="text-input"
+            placeholder="Kupon kodu"
+            value={
+              couponInput
+            }
+            onChange={(event) =>
+              setCouponInput(
+                event.target
+                  .value
+              )
+            }
+          />
 
           <button
             type="button"
-            className="career-play-button"
-            disabled={
-              game.career
-                .completed
-            }
+            className="secondary-button"
+            style={{
+              width: "100%",
+              marginTop: 8,
+            }}
             onClick={
-              startCareerBattle
+              redeemCoupon
             }
           >
-            {game.career.completed
-              ? "KARİYER TAMAMLANDI"
-              : `⚔️ MAÇ ${game.career.match}'E GİR`}
+            KODU KULLAN
           </button>
+        </div>
+      </div>
+    );
+  }
 
-          <div className="career-road-heading">
-            <div className="section-label">
-              KARİYER YOLU
-            </div>
-            <h2>LİGLER</h2>
-          </div>
+  if (
+    !started &&
+    game.clubName
+  ) {
+    return (
+      <div className="app-shell">
+        <div className="intro-screen">
+          <div className="intro-box">
+            <img
+              className="intro-logo"
+              src={`${
+                import.meta.env
+                  .BASE_URL
+              }icons/icon.svg`}
+              alt="SCW"
+            />
 
-          <div className="career-road">
-            {careerLeagues.map(
-              (
-                item,
-                index
-              ) => {
-                const completed =
-                  game.career.completed ||
-                  index <
-                    game.career
-                      .leagueIndex;
+            <h1>
+              SOCCER CARDS WAR
+            </h1>
 
-                const current =
-                  !game.career.completed &&
-                  index ===
-                    game.career
-                      .leagueIndex;
+            <p className="section-subtitle">
+              EL TURCO PRESENTS
+            </p>
 
-                return (
-                  <div
-                    key={
-                      item.name
-                    }
-                    className={`league-card ${
-                      completed
-                        ? "complete"
-                        : ""
-                    } ${
-                      current
-                        ? "current"
-                        : ""
-                    }`}
-                  >
-                    <span>
-                      {completed
-                        ? "✓ TAMAM"
-                        : current
-                          ? "● ŞU AN"
-                          : "KİLİTLİ"}
-                    </span>
-
-                    <h3>
-                      {item.name}
-                    </h3>
-
-                    <p>
-                      {item.min}–
-                      {item.max} GEN
-                      •{" "}
-                      {item.matches}{" "}
-                      maç
-                    </p>
-                  </div>
-                );
+            <button
+              type="button"
+              className="primary-button"
+              style={{
+                marginTop: 15,
+              }}
+              onClick={() =>
+                setStarted(
+                  true
+                )
               }
-            )}
+            >
+              DEVAM ET
+            </button>
           </div>
-        </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    !game.clubName
+  ) {
+    return (
+      <div className="app-shell">
+        <div className="setup-screen">
+          <div className="setup-box page-card">
+            <img
+              className="intro-logo"
+              src={`${
+                import.meta.env
+                  .BASE_URL
+              }icons/icon.svg`}
+              alt="SCW"
+            />
+
+            <h1>
+              KULÜBÜNÜ KUR
+            </h1>
+
+            <p className="section-subtitle">
+              Başlangıçta 2 Forvet,
+              3 Orta Saha, 4 Defans
+              ve 1 Kaleci verilir.
+            </p>
+
+            <label className="field-label">
+              Kulüp Adı
+            </label>
+
+            <input
+              className="text-input"
+              value={
+                clubNameInput
+              }
+              onChange={(event) =>
+                setClubNameInput(
+                  event.target
+                    .value
+                )
+              }
+              placeholder="Kulüp adın"
+            />
+
+            <button
+              type="button"
+              className="primary-button"
+              style={{
+                width: "100%",
+                marginTop: 12,
+              }}
+              onClick={
+                createClub
+              }
+            >
+              KULÜBÜ KUR
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="game-screen">
+    <div className="app-shell">
       <TopBar />
-      <Notice />
 
-      <main className="home-content mobile-home">
-        <section className="welcome-area">
-          <div className="section-label">
-            SOCCER CARDS WAR
+      {notice && (
+        <button
+          type="button"
+          className="notice"
+          style={{
+            width: "100%",
+          }}
+          onClick={() =>
+            setNotice("")
+          }
+        >
+          {notice}
+        </button>
+      )}
+
+      {battle ? (
+        <BattleScreen />
+      ) : (
+        <>
+          {screen ===
+            "home" && (
+            <HomeScreen />
+          )}
+
+          {screen ===
+            "team" && (
+            <TeamScreen />
+          )}
+
+          {screen ===
+            "collection" && (
+            <CollectionScreen />
+          )}
+
+          {screen ===
+            "transfers" && (
+            <TransfersScreen />
+          )}
+
+          {screen ===
+            "training" && (
+            <TrainingScreen />
+          )}
+
+          {screen ===
+            "coaches" && (
+            <CoachesScreen />
+          )}
+
+          {screen ===
+            "rental" && (
+            <RentalScreen />
+          )}
+
+          {screen ===
+            "events" && (
+            <EventsScreen />
+          )}
+
+          {screen ===
+            "career" && (
+            <CareerScreen />
+          )}
+
+          {screen ===
+            "profile" && (
+            <ProfileScreen />
+          )}
+
+          {screen ===
+            "store" && (
+            <StoreScreen />
+          )}
+        </>
+      )}
+
+      {purchaseModal && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>
+              Oyuncu satın alınsın
+              mı?
+            </h2>
+
+            <PlayerCard
+              player={
+                purchaseModal.player
+              }
+            />
+
+            <p>
+              <strong>
+                {
+                  purchaseModal
+                    .player.name
+                }
+              </strong>
+              <br />
+              GEN{" "}
+              {
+                purchaseModal
+                  .player.overall
+              }
+            </p>
+
+            <div className="action-row">
+              <button
+                type="button"
+                className="gold-button"
+                onClick={
+                  executePurchase
+                }
+              >
+                SATIN AL
+              </button>
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  setPurchaseModal(
+                    null
+                  )
+                }
+              >
+                VAZGEÇ
+              </button>
+            </div>
           </div>
-
-          <h1>
-            {game.clubName}
-          </h1>
-
-          <p>
-            Kulübünü büyüt,
-            kendi yıldızını
-            geliştir ve kart
-            savaşlarının zirvesine
-            çık.
-          </p>
-        </section>
-
-        <section className="club-overview">
-          <div>
-            <strong>
-              {teamOverall}
-            </strong>
-            <span>
-              DESTE GEN
-            </span>
-          </div>
-
-          <div>
-            <strong>
-              {game.squad.length}
-              /10
-            </strong>
-            <span>
-              MAÇ DESTESİ
-            </span>
-          </div>
-
-          <div>
-            <strong>
-              {game.collection.length}
-            </strong>
-            <span>KART</span>
-          </div>
-
-          <div>
-            <strong>
-              {game.trainingCap}
-            </strong>
-            <span>
-              GELİŞİM MAX
-            </span>
-          </div>
-        </section>
-
-        <section className="menu-grid">
-          <MenuCard
-            icon="⚔️"
-            label="RİSK MODU"
-            title="KARİYER"
-            onClick={() =>
-              openScreen(
-                "career"
-              )
-            }
-          />
-
-          <MenuCard
-            icon="🏚️"
-            label="10 AŞAMA"
-            title="ETKİNLİKLER"
-            onClick={() =>
-              openScreen(
-                "events"
-              )
-            }
-          />
-
-          <MenuCard
-            icon="🛡️"
-            label={`${game.squad.length}/10`}
-            title="TAKIMIM"
-            onClick={() =>
-              openScreen(
-                "squad"
-              )
-            }
-          />
-
-          <MenuCard
-            icon="🎴"
-            label={`${game.collection.length} KART`}
-            title="KOLEKSİYON"
-            onClick={() =>
-              openScreen(
-                "collection"
-              )
-            }
-          />
-
-          <MenuCard
-            icon="🏋️"
-            label="GERÇEK ZAMAN"
-            title="ANTRENMAN"
-            onClick={() =>
-              openScreen(
-                "training"
-              )
-            }
-          />
-
-          <MenuCard
-            icon="🤝"
-            label={`MAX ${game.marketCap} GEN`}
-            title="TRANSFER"
-            onClick={() =>
-              openScreen(
-                "transfers"
-              )
-            }
-          />
-
-          <MenuCard
-            icon="🛒"
-            label="COIN & KUPON"
-            title="MAĞAZA"
-            onClick={() =>
-              openScreen(
-                "store"
-              )
-            }
-          />
-
-          <MenuCard
-            icon="🎁"
-            label={`SERİ ${game.daily.streak}/7`}
-            title="GÜNLÜK ÖDÜL"
-            onClick={
-              collectDailyReward
-            }
-          />
-
-          <MenuCard
-            icon={
-              installed
-                ? "✅"
-                : "📲"
-            }
-            label={
-              installed
-                ? "KURULU"
-                : "PWA"
-            }
-            title={
-              installed
-                ? "UYGULAMA"
-                : "YÜKLE"
-            }
-            onClick={
-              installApp
-            }
-          />
-        </section>
-      </main>
-    </div>
-  );
-}
-
-function MenuCard({
-  icon,
-  label,
-  title,
-  onClick,
-}) {
-  return (
-    <button
-      type="button"
-      className="menu-card"
-      onClick={onClick}
-    >
-      <div className="menu-icon">
-        {icon}
-      </div>
-
-      <div>
-        <span>
-          {label}
-        </span>
-
-        <h2>
-          {title}
-        </h2>
-      </div>
-    </button>
-  );
-}
-
-function BackButton({
-  onClick,
-}) {
-  return (
-    <button
-      type="button"
-      className="back-link"
-      onClick={onClick}
-    >
-      ← ANA MENÜ
-    </button>
-  );
-}
-
-function PageHeading({
-  label,
-  title,
-  text,
-  stat,
-}) {
-  return (
-    <div className="page-heading">
-      <div>
-        <div className="section-label">
-          {label}
         </div>
-
-        <h1>
-          {title}
-        </h1>
-
-        <p>
-          {text}
-        </p>
-      </div>
-
-      <div className="heading-stat">
-        {stat}
-      </div>
+      )}
     </div>
   );
 }
