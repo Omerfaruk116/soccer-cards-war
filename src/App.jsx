@@ -24,21 +24,17 @@ import {
   getEventConfig,
   getPositionGroup,
   getRarity,
-  getStageReward,
   getUpgradePackReward,
   positionGroups,
   positions,
   randomItem,
   rentalCenterConfig,
   shuffle,
-  squadRequirements,
   stageRewards,
   trainingPlans,
-  upgradePackTypes,
 } from "./data/players";
 
 import {
-  DAILY_REWARD_COOLDOWN_MS,
   EVENT_MATCH_COOLDOWN_MS,
   canRentPlayer,
   canSellPlayer,
@@ -55,17 +51,21 @@ import {
   millisecondsToClock,
 } from "./utils/gameRules";
 
+import {
+  buildBestLineup,
+} from "./utils/autoLineup";
+
 const SAVE_KEY =
   "soccer-cards-war-save-v5";
 
 const SAVE_VERSION = 5;
 
+const STORE_TEST_MODE = true;
+
 const HOME_HISTORY = {
   scw: true,
   view: "home",
 };
-
-const STORE_TEST_MODE = true;
 
 const COIN_PACKAGES = [
   {
@@ -376,14 +376,16 @@ const APP_CSS = `
     color: #a7f4ce;
   }
 
-  .menu-grid {
+  .menu-grid,
+  .folder-grid {
     display: grid;
     grid-template-columns:
       repeat(2, minmax(0, 1fr));
     gap: 12px;
   }
 
-  .menu-card {
+  .menu-card,
+  .folder-card {
     min-height: 142px;
     padding: 16px;
     border: 1px solid #303640;
@@ -395,13 +397,15 @@ const APP_CSS = `
     position: relative;
   }
 
-  .menu-card strong {
+  .menu-card strong,
+  .folder-card strong {
     display: block;
     font-size: 18px;
     margin-top: 7px;
   }
 
-  .menu-card span {
+  .menu-card span,
+  .folder-card span {
     display: block;
     margin-top: 4px;
     color: rgba(255,255,255,.68);
@@ -413,13 +417,53 @@ const APP_CSS = `
     font-size: 30px;
   }
 
-  .menu-career {
+  .folder-match {
     background:
       radial-gradient(
         circle at 85% 10%,
-        rgba(255,95,0,.32),
+        rgba(255,79,0,.30),
         transparent 35%
       ),
+      linear-gradient(
+        145deg,
+        #3e140d,
+        #160908
+      );
+    border-color: #87331f;
+  }
+
+  .folder-team {
+    background:
+      radial-gradient(
+        circle at 85% 10%,
+        rgba(30,220,120,.20),
+        transparent 35%
+      ),
+      linear-gradient(
+        145deg,
+        #123723,
+        #081810
+      );
+    border-color: #2b6e49;
+  }
+
+  .folder-shopping {
+    background:
+      radial-gradient(
+        circle at 85% 10%,
+        rgba(225,170,55,.20),
+        transparent 35%
+      ),
+      linear-gradient(
+        145deg,
+        #382b10,
+        #171108
+      );
+    border-color: #765a25;
+  }
+
+  .folder-career {
+    background:
       linear-gradient(
         145deg,
         #40130c,
@@ -428,13 +472,8 @@ const APP_CSS = `
     border-color: #88321f;
   }
 
-  .menu-event {
+  .folder-event {
     background:
-      radial-gradient(
-        circle at 85% 10%,
-        rgba(0,145,255,.27),
-        transparent 35%
-      ),
       linear-gradient(
         145deg,
         #102d4f,
@@ -443,13 +482,8 @@ const APP_CSS = `
     border-color: #275b91;
   }
 
-  .menu-training {
+  .folder-training {
     background:
-      radial-gradient(
-        circle at 85% 10%,
-        rgba(25,220,120,.22),
-        transparent 35%
-      ),
       linear-gradient(
         145deg,
         #123724,
@@ -458,7 +492,7 @@ const APP_CSS = `
     border-color: #286747;
   }
 
-  .menu-transfer {
+  .folder-transfer {
     background:
       linear-gradient(
         145deg,
@@ -466,6 +500,27 @@ const APP_CSS = `
         #171208
       );
     border-color: #705825;
+  }
+
+  .auto-lineup-button {
+    width: 100%;
+    min-height: 52px;
+    margin: 0 0 14px;
+    border: 1px solid #d39b36;
+    border-radius: 13px;
+    color: #ffe1a1;
+    font-weight: 1000;
+    background:
+      radial-gradient(
+        circle at 15% 50%,
+        rgba(255,195,62,.22),
+        transparent 40%
+      ),
+      linear-gradient(
+        135deg,
+        #5a3f10,
+        #241907
+      );
   }
 
   .info-box {
@@ -599,32 +654,14 @@ const APP_CSS = `
 
   .rarity-epic {
     border-color: #75489f;
-    background:
-      linear-gradient(
-        145deg,
-        #251330,
-        #0e0912
-      );
   }
 
   .rarity-legendary {
     border-color: #bb6b2a;
-    background:
-      linear-gradient(
-        145deg,
-        #42220c,
-        #120b07
-      );
   }
 
   .rarity-icon {
     border-color: #d8d1a4;
-    background:
-      linear-gradient(
-        145deg,
-        #49452c,
-        #11100b
-      );
   }
 
   .player-card-elturco,
@@ -641,31 +678,12 @@ const APP_CSS = `
         #501506,
         #120705
       );
-    box-shadow:
-      inset 0 0 25px rgba(255,85,0,.2);
-  }
-
-  .player-card-elturco::before {
-    content: "🔥";
-    position: absolute;
-    font-size: 70px;
-    opacity: .12;
-    left: -10px;
-    bottom: -15px;
   }
 
   .player-card-sold,
   .player-card-locked {
     filter: grayscale(1);
     opacity: .48;
-  }
-
-  .player-card-training {
-    border-color: #2a8a5a;
-  }
-
-  .player-card-rented {
-    border-color: #3e76a6;
   }
 
   .team-field {
@@ -876,10 +894,6 @@ const APP_CSS = `
     background: #11161c;
   }
 
-  .modal h2 {
-    margin-top: 0;
-  }
-
   .profile-stat-grid {
     display: grid;
     grid-template-columns:
@@ -913,10 +927,6 @@ const APP_CSS = `
     gap: 14px;
     padding: 12px 0;
     border-bottom: 1px solid #222a32;
-  }
-
-  .setting-row:last-child {
-    border-bottom: 0;
   }
 
   .switch-button {
@@ -1005,7 +1015,6 @@ const APP_CSS = `
     border-radius: 11px;
     background: #0c1117;
     color: white;
-    outline: none;
   }
 
   .field-label {
@@ -1040,17 +1049,21 @@ const APP_CSS = `
   }
 
   @media (max-width: 430px) {
-    .menu-grid {
-      grid-template-columns: 1fr 1fr;
+    .menu-grid,
+    .folder-grid {
+      grid-template-columns:
+        1fr 1fr;
       gap: 9px;
     }
 
-    .menu-card {
+    .menu-card,
+    .folder-card {
       min-height: 125px;
       padding: 12px;
     }
 
-    .menu-card strong {
+    .menu-card strong,
+    .folder-card strong {
       font-size: 15px;
     }
 
@@ -1068,10 +1081,6 @@ const APP_CSS = `
     .stage-reward-grid {
       grid-template-columns: 1fr;
     }
-
-    .club-name {
-      max-width: 105px;
-    }
   }
 `;
 
@@ -1079,7 +1088,6 @@ function buildInitialFormation(
   starters
 ) {
   const result = {};
-
   const used = new Set();
 
   TEAM_SLOTS.forEach(
@@ -1204,6 +1212,7 @@ function createBlankGame() {
     profile: {
       playSeconds: 0,
       infoEnabled: true,
+
       notifications: {
         daily: true,
         training: true,
@@ -1240,7 +1249,9 @@ function createBlankGame() {
   };
 }
 
-function normalizeGame(saved) {
+function normalizeGame(
+  saved
+) {
   const blank =
     createBlankGame();
 
@@ -1323,13 +1334,6 @@ function normalizeGame(saved) {
     collection,
 
     events,
-
-    market:
-      Array.isArray(
-        saved.market
-      )
-        ? saved.market
-        : [],
 
     formation:
       saved.formation ||
@@ -1580,16 +1584,16 @@ function App() {
   const [
     installed,
     setInstalled,
-  ] = useState(() => {
-    return Boolean(
+  ] = useState(() =>
+    Boolean(
       window.matchMedia?.(
         "(display-mode: standalone)"
       )?.matches ||
         window.navigator
           .standalone ===
           true
-    );
-  });
+    )
+  );
 
   const [
     installPrompt,
@@ -1654,9 +1658,7 @@ function App() {
           return;
         }
 
-        if (
-          !game.clubName
-        ) {
+        if (!game.clubName) {
           return;
         }
 
@@ -1695,12 +1697,11 @@ function App() {
     const handleInstalled =
       () => {
         setInstalled(true);
-
         setInstallPrompt(
           null
         );
 
-        showNotice(
+        setNotice(
           "Soccer Cards War kuruldu."
         );
       };
@@ -1774,9 +1775,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (
-      !game.training
-    ) {
+    if (!game.training) {
       return;
     }
 
@@ -1857,7 +1856,7 @@ function App() {
         ?.notifications
         ?.training
     ) {
-      showNotice(
+      setNotice(
         "🏋️ Antrenman tamamlandı."
       );
     }
@@ -1877,9 +1876,7 @@ function App() {
               rental.endsAt
         ) || [];
 
-    if (
-      !finished.length
-    ) {
+    if (!finished.length) {
       return;
     }
 
@@ -1960,7 +1957,7 @@ function App() {
         ?.notifications
         ?.rental
     ) {
-      showNotice(
+      setNotice(
         "🤝 Kiradaki oyuncuların geri döndü."
       );
     }
@@ -1980,9 +1977,7 @@ function App() {
               session.endsAt
         ) || [];
 
-    if (
-      !finished.length
-    ) {
+    if (!finished.length) {
       return;
     }
 
@@ -2077,7 +2072,7 @@ function App() {
       }
     );
 
-    showNotice(
+    setNotice(
       "⭐ Antrenör çalışması tamamlandı."
     );
   }, [
@@ -2178,9 +2173,25 @@ function App() {
     );
   }
 
+  function setFolderScreen(
+    next
+  ) {
+    setBattle(null);
+    setScreen(next);
+
+    window.history.replaceState(
+      {
+        scw: true,
+        view: "screen",
+        screen: next,
+      },
+      "",
+      window.location.href
+    );
+  }
+
   function goHome() {
     setBattle(null);
-
     setScreen("home");
 
     window.history.replaceState(
@@ -2254,7 +2265,7 @@ function App() {
 
     const second =
       window.confirm(
-        "Bu işlem geri alınamaz. EVET diyorsan OK'e bas."
+        "Bu işlem geri alınamaz. Gerçekten sıfırlamak istiyor musun?"
       );
 
     if (!second) {
@@ -2270,10 +2281,42 @@ function App() {
     );
 
     setStarted(false);
-
     setScreen("home");
-
     setBattle(null);
+  }
+
+  function autoBuildBestTeam() {
+    const result =
+      buildBestLineup(
+        game
+      );
+
+    if (!result.success) {
+      showNotice(
+        result.message
+      );
+      return;
+    }
+
+    setGame(
+      (previous) => ({
+        ...previous,
+
+        formation:
+          result.formation,
+
+        squad:
+          result.squad,
+      })
+    );
+
+    setSelectedTeamPlayer(
+      null
+    );
+
+    showNotice(
+      result.message
+    );
   }
 
   function placePlayer(
@@ -2423,7 +2466,7 @@ function App() {
 
     if (
       deck.length !==
-      10 ||
+        10 ||
       !result.valid
     ) {
       return {
@@ -2445,23 +2488,8 @@ function App() {
     if (busy) {
       return {
         valid: false,
-        message: `${busy.name} şu anda antrenmanda veya kiralıkta. Yerine başka oyuncu koy.`,
-      };
-    }
-
-    const overCap =
-      deck.find(
-        (player) =>
-          player.overall >
-            stageCap &&
-          player.overall !==
-            100
-      );
-
-    if (overCap) {
-      return {
-        valid: false,
-        message: `${overCap.name} bu aşamanın GEN sınırını aşıyor.`,
+        message:
+          `${busy.name} şu anda kullanılamıyor. Yerine başka oyuncu koy.`,
       };
     }
 
@@ -2489,17 +2517,15 @@ function App() {
     if (
       mode === "career"
     ) {
-      const careerCheck =
+      const check =
         canStartCareer(
           game,
           stageCap
         );
 
-      if (
-        !careerCheck.allowed
-      ) {
+      if (!check.allowed) {
         showNotice(
-          careerCheck.message
+          check.message
         );
         return;
       }
@@ -2508,17 +2534,15 @@ function App() {
     if (
       mode === "event"
     ) {
-      const eventCheck =
+      const check =
         canStartEvent(
           game,
           stageCap
         );
 
-      if (
-        !eventCheck.allowed
-      ) {
+      if (!check.allowed) {
         showNotice(
-          eventCheck.message
+          check.message
         );
         return;
       }
@@ -2829,6 +2853,7 @@ function App() {
 
           stats: {
             ...previous.stats,
+
             draws:
               previous.stats
                 .draws + 1,
@@ -2979,6 +3004,7 @@ function App() {
 
           stats: {
             ...previous.stats,
+
             draws:
               previous.stats
                 .draws + 1,
@@ -3131,8 +3157,10 @@ function App() {
 
           collection: [
             ...previous.collection,
+
             {
               ...player,
+
               id:
                 crypto.randomUUID?.() ||
                 `${Date.now()}-${Math.random()}`,
@@ -3258,9 +3286,7 @@ function App() {
     const stage =
       game.activeStage;
 
-    if (
-      stage >= 10
-    ) {
+    if (stage >= 10) {
       return;
     }
 
@@ -3300,13 +3326,16 @@ function App() {
 
         career: {
           ...previous.career,
+
           stage:
             Math.min(
               10,
               previous.career
                 .stage + 1
             ),
+
           match: 1,
+
           wins: 0,
         },
 
@@ -3383,6 +3412,7 @@ function App() {
 
       result: {
         type: "loss",
+
         lostPlayer:
           player,
       },
@@ -3390,9 +3420,7 @@ function App() {
   }
 
   function finishTrainingNow() {
-    if (
-      !game.training
-    ) {
+    if (!game.training) {
       return;
     }
 
@@ -3421,6 +3449,7 @@ function App() {
 
         training: {
           ...previous.training,
+
           endsAt:
             Date.now(),
         },
@@ -3452,9 +3481,7 @@ function App() {
         player
       );
 
-    if (
-      !check.allowed
-    ) {
+    if (!check.allowed) {
       showNotice(
         check.message
       );
@@ -3734,6 +3761,7 @@ function App() {
 
         rentalCenter: {
           ...previous.rentalCenter,
+
           unlocked: true,
         },
       })
@@ -3797,9 +3825,7 @@ function App() {
         player
       );
 
-    if (
-      !check.allowed
-    ) {
+    if (!check.allowed) {
       showNotice(
         check.message
       );
@@ -3871,9 +3897,7 @@ function App() {
   function recallRental(
     rental
   ) {
-    if (
-      rental.finished
-    ) {
+    if (rental.finished) {
       return;
     }
 
@@ -3959,6 +3983,7 @@ function App() {
 
         rentalCenter: {
           ...previous.rentalCenter,
+
           pendingCoins: 0,
         },
       })
@@ -3990,9 +4015,7 @@ function App() {
   }
 
   function executePurchase() {
-    if (
-      !purchaseModal
-    ) {
+    if (!purchaseModal) {
       return;
     }
 
@@ -4031,6 +4054,7 @@ function App() {
 
           collection: [
             ...previous.collection,
+
             {
               ...player,
               price: undefined,
@@ -4090,8 +4114,10 @@ function App() {
 
           collection: [
             ...previous.collection,
+
             {
               ...player,
+
               eventPrice:
                 undefined,
             },
@@ -4143,9 +4169,7 @@ function App() {
         player
       );
 
-    if (
-      !check.allowed
-    ) {
+    if (!check.allowed) {
       showNotice(
         check.message
       );
@@ -4162,9 +4186,7 @@ function App() {
         `${player.name} ${price.toLocaleString()} Coin karşılığında satılsın mı?`
       );
 
-    if (
-      !confirmed
-    ) {
+    if (!confirmed) {
       return;
     }
 
@@ -4327,6 +4349,7 @@ function App() {
 
           collection: [
             ...previous.collection,
+
             {
               ...player,
               price: undefined,
@@ -4336,6 +4359,7 @@ function App() {
           daily: {
             lastClaimAt:
               Date.now(),
+
             streak:
               nextStreak,
           },
@@ -4359,6 +4383,7 @@ function App() {
           daily: {
             lastClaimAt:
               Date.now(),
+
             streak:
               nextStreak,
           },
@@ -4423,9 +4448,7 @@ function App() {
       return;
     }
 
-    if (
-      !installPrompt
-    ) {
+    if (!installPrompt) {
       showNotice(
         "Kurulum seçeneği şu anda tarayıcı tarafından sunulmuyor."
       );
@@ -4461,9 +4484,11 @@ function App() {
 
         storePurchases: [
           ...previous.storePurchases,
+
           {
             id:
               pack.id,
+
             at:
               Date.now(),
           },
@@ -4594,6 +4619,7 @@ function App() {
   function PageHeader({
     title,
     subtitle,
+    backTo = "home",
   }) {
     return (
       <div className="section-head">
@@ -4612,7 +4638,18 @@ function App() {
         <button
           type="button"
           className="back-button"
-          onClick={goHome}
+          onClick={() => {
+            if (
+              backTo ===
+              "home"
+            ) {
+              goHome();
+            } else {
+              setFolderScreen(
+                backTo
+              );
+            }
+          }}
         >
           GERİ
         </button>
@@ -4676,7 +4713,90 @@ function App() {
         <div className="menu-grid">
           <button
             type="button"
-            className="menu-card menu-career"
+            className="menu-card folder-match"
+            onClick={() =>
+              openScreen(
+                "match-menu"
+              )
+            }
+          >
+            <div className="menu-icon">
+              ⚽
+            </div>
+
+            <strong>
+              MAÇ
+            </strong>
+
+            <span>
+              Kariyer ve etkinlik
+              maçlarına gir
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card folder-team"
+            onClick={() =>
+              openScreen(
+                "team-menu"
+              )
+            }
+          >
+            <div className="menu-icon">
+              👥
+            </div>
+
+            <strong>
+              TAKIMIM
+            </strong>
+
+            <span>
+              Kadro, antrenman,
+              koleksiyon ve
+              antrenörler
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="menu-card folder-shopping"
+            onClick={() =>
+              openScreen(
+                "shopping-menu"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🛒
+            </div>
+
+            <strong>
+              ALIŞVERİŞ
+            </strong>
+
+            <span>
+              Mağaza, transfer ve
+              kiralık oyuncular
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function MatchMenuScreen() {
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="⚽ MAÇ"
+          subtitle="Oynamak istediğin modu seç."
+        />
+
+        <div className="folder-grid">
+          <button
+            type="button"
+            className="folder-card folder-career"
             onClick={() =>
               openScreen(
                 "career"
@@ -4688,7 +4808,7 @@ function App() {
             </div>
 
             <strong>
-              KARİYER
+              KARİYER MAÇI
             </strong>
 
             <span>
@@ -4701,7 +4821,7 @@ function App() {
 
           <button
             type="button"
-            className="menu-card menu-event"
+            className="folder-card folder-event"
             onClick={() =>
               openScreen(
                 "events"
@@ -4713,18 +4833,54 @@ function App() {
             </div>
 
             <strong>
-              ETKİNLİK
+              ETKİNLİK MAÇI
             </strong>
 
             <span>
-              Kart seç • GEN
+              Kart seç, GEN
               paketleri kazan
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function TeamMenuScreen() {
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="👥 TAKIMIM"
+          subtitle="Kulübünün sportif bölümü."
+        />
+
+        <div className="folder-grid">
+          <button
+            type="button"
+            className="folder-card folder-team"
+            onClick={() =>
+              openScreen(
+                "team"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🟩
+            </div>
+
+            <strong>
+              KADRO
+            </strong>
+
+            <span>
+              İlk 10'unu düzenle
+              veya otomatik kur
             </span>
           </button>
 
           <button
             type="button"
-            className="menu-card menu-training"
+            className="folder-card folder-training"
             onClick={() =>
               openScreen(
                 "training"
@@ -4740,59 +4896,14 @@ function App() {
             </strong>
 
             <span>
-              Coin veya GEN
-              paketiyle geliştir
+              Oyuncularını GEN
+              olarak geliştir
             </span>
           </button>
 
           <button
             type="button"
-            className="menu-card menu-transfer"
-            onClick={() =>
-              openScreen(
-                "transfers"
-              )
-            }
-          >
-            <div className="menu-icon">
-              💰
-            </div>
-
-            <strong>
-              TRANSFER
-            </strong>
-
-            <span>
-              Oyuncu al ve sat
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className="menu-card"
-            onClick={() =>
-              openScreen(
-                "team"
-              )
-            }
-          >
-            <div className="menu-icon">
-              🟩
-            </div>
-
-            <strong>
-              TAKIMIM
-            </strong>
-
-            <span>
-              Profesyonel kadro
-              ekranı
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className="menu-card"
+            className="folder-card"
             onClick={() =>
               openScreen(
                 "collection"
@@ -4808,14 +4919,96 @@ function App() {
             </strong>
 
             <span>
-              Kartlar ve aşama
-              ödülleri
+              Sahip olduğun ve
+              geçmiş kartlarını gör
             </span>
           </button>
 
           <button
             type="button"
-            className="menu-card"
+            className="folder-card"
+            onClick={() =>
+              openScreen(
+                "coaches"
+              )
+            }
+          >
+            <div className="menu-icon">
+              ⭐
+            </div>
+
+            <strong>
+              ANTRENÖRLER
+            </strong>
+
+            <span>
+              Antrenör satın al ve
+              oyuncularını geliştir
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function ShoppingMenuScreen() {
+    return (
+      <div className="page-card">
+        <PageHeader
+          title="🛒 ALIŞVERİŞ"
+          subtitle="Kulüp ekonomisi ve oyuncu işlemleri."
+        />
+
+        <div className="folder-grid">
+          <button
+            type="button"
+            className="folder-card folder-shopping"
+            onClick={() =>
+              openScreen(
+                "store"
+              )
+            }
+          >
+            <div className="menu-icon">
+              🪙
+            </div>
+
+            <strong>
+              MAĞAZA
+            </strong>
+
+            <span>
+              Coin paketleri ve
+              promosyon kodları
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="folder-card folder-transfer"
+            onClick={() =>
+              openScreen(
+                "transfers"
+              )
+            }
+          >
+            <div className="menu-icon">
+              💰
+            </div>
+
+            <strong>
+              TRANSFER
+            </strong>
+
+            <span>
+              Oyuncu satın al ve
+              oyuncu sat
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="folder-card"
             onClick={() =>
               openScreen(
                 "rental"
@@ -4832,52 +5025,7 @@ function App() {
 
             <span>
               Oyuncularından pasif
-              gelir kazan
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className="menu-card"
-            onClick={() =>
-              openScreen(
-                "coaches"
-              )
-            }
-          >
-            <div className="menu-icon">
-              ⭐
-            </div>
-
-            <strong>
-              ANTRENÖRLER
-            </strong>
-
-            <span>
-              Yıldızlı antrenörler
-              satın al
-            </span>
-          </button>
-
-          <button
-            type="button"
-            className="menu-card"
-            onClick={() =>
-              openScreen(
-                "store"
-              )
-            }
-          >
-            <div className="menu-icon">
-              🛒
-            </div>
-
-            <strong>
-              MAĞAZA
-            </strong>
-
-            <span>
-              Test Coin paketleri
+              Coin geliri kazan
             </span>
           </button>
         </div>
@@ -4967,17 +5115,27 @@ function App() {
     return (
       <div className="page-card">
         <PageHeader
-          title="TAKIMIM"
+          title="KADRO"
           subtitle="2 Forvet • 3 Orta Saha • 4 Defans • 1 Kaleci"
+          backTo="team-menu"
         />
 
+        <button
+          type="button"
+          className="auto-lineup-button"
+          onClick={
+            autoBuildBestTeam
+          }
+        >
+          ⚡ EN İYİ KADROYU KUR
+        </button>
+
         <InfoBox>
-          Alttan bir oyuncuya
-          dokun, sonra üstte
-          uygun pozisyon slotuna
-          dokun. Antrenmanda veya
-          kiralıkta olan oyuncular
-          kullanılamaz.
+          Tek tuşla mevcut aşama
+          sınırına uygun en güçlü
+          2 Forvet, 3 Orta Saha,
+          4 Defans ve 1 Kaleci
+          otomatik yerleşir.
         </InfoBox>
 
         <div className="team-field">
@@ -5054,23 +5212,6 @@ function App() {
                     selectedTeamPlayer ===
                     player.id
                   }
-                  training={
-                    game.training
-                      ?.playerId ===
-                    player.id
-                  }
-                  rented={
-                    game.rentalCenter.rentals.some(
-                      (
-                        rental
-                      ) =>
-                        rental.playerId ===
-                          player.id &&
-                        !rental.finished &&
-                        rental.endsAt >
-                          now
-                    )
-                  }
                   locked={
                     locked
                   }
@@ -5098,15 +5239,14 @@ function App() {
         <PageHeader
           title="KOLEKSİYON"
           subtitle={`${game.collection.length} keşfedilmiş kart`}
+          backTo="team-menu"
         />
 
         <InfoBox>
           Satılan oyuncular burada
           geçmiş kart olarak
-          görünmeye devam eder.
-          Aşama ödülleri ise daha
-          kazanılmadan kilitli
-          şekilde gösterilir.
+          görünür. Aşama ödülleri
+          açılmadan önce kilitlidir.
         </InfoBox>
 
         <h2>
@@ -5166,9 +5306,7 @@ function App() {
           )}
         </div>
 
-        <h2 style={{
-          marginTop: 24,
-        }}>
+        <h2>
           Tüm Kartlar
         </h2>
 
@@ -5199,29 +5337,25 @@ function App() {
         <PageHeader
           title="TRANSFER"
           subtitle={`Market sınırı: ${game.marketCap} GEN`}
+          backTo="shopping-menu"
         />
 
         <InfoBox>
-          Buradan oyuncu satın
-          alabilir ve sahip
-          olduğun oyuncuları
-          satabilirsin. Satıştan
-          sonra minimum kadro
-          dağılımın bozulamaz.
+          Oyuncu satın alabilir ve
+          sahip olduğun oyuncuları
+          satabilirsin.
         </InfoBox>
 
-        <div className="action-row">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={
-              refreshMarket
-            }
-          >
-            🔄 MARKETİ
-            YENİLE • 100
-          </button>
-        </div>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={
+            refreshMarket
+          }
+        >
+          🔄 MARKETİ YENİLE •
+          100
+        </button>
 
         <h2>
           Transfer Pazarı
@@ -5266,9 +5400,7 @@ function App() {
           )}
         </div>
 
-        <h2 style={{
-          marginTop: 26,
-        }}>
+        <h2>
           Oyuncu Sat
         </h2>
 
@@ -5311,9 +5443,7 @@ function App() {
           )}
         </div>
 
-        <h2 style={{
-          marginTop: 26,
-        }}>
+        <h2>
           Kendi Oyuncunu Oluştur
         </h2>
 
@@ -5415,8 +5545,7 @@ function App() {
               createMyPlayer
             }
           >
-            OLUŞTUR • 750
-            COIN
+            OLUŞTUR • 750 COIN
           </button>
         </div>
       </div>
@@ -5439,33 +5568,30 @@ function App() {
         <PageHeader
           title="ANTRENMAN"
           subtitle={`Aşama sınırı: ${game.trainingCap} GEN`}
+          backTo="team-menu"
         />
 
         <InfoBox>
-          Oyuncunu Coin veya
-          kazandığın GEN paketiyle
-          geliştirebilirsin.
+          Coin veya GEN paketiyle
+          oyuncunu geliştir.
           Antrenmandaki oyuncu
-          maçlarda kullanılamaz.
+          maçta kullanılamaz.
         </InfoBox>
 
         <div className="notice">
           📦 +1:{" "}
           {
-            game
-              .upgradePacks
+            game.upgradePacks
               .gen1
           }{" "}
           • +2:{" "}
           {
-            game
-              .upgradePacks
+            game.upgradePacks
               .gen2
           }{" "}
           • +4:{" "}
           {
-            game
-              .upgradePacks
+            game.upgradePacks
               .gen4
           }
         </div>
@@ -5545,9 +5671,7 @@ function App() {
               )}
             </div>
 
-            <h2 style={{
-              marginTop: 24,
-            }}>
+            <h2>
               Program
             </h2>
 
@@ -5607,9 +5731,7 @@ function App() {
                           }
                         >
                           🪙{" "}
-                          {
-                            cost
-                          }
+                          {cost}
                         </button>
 
                         <button
@@ -5624,10 +5746,8 @@ function App() {
                         >
                           📦{" "}
                           {
-                            game
-                              .upgradePacks[
-                              plan
-                                .packType
+                            game.upgradePacks[
+                              plan.packType
                             ]
                           }
                         </button>
@@ -5647,16 +5767,15 @@ function App() {
     return (
       <div className="page-card">
         <PageHeader
-          title="ANTRENÖR MERKEZİ"
+          title="ANTRENÖRLER"
           subtitle="Uzun vadeli oyuncu gelişimi"
+          backTo="team-menu"
         />
 
         <InfoBox>
-          Antrenör satın alındıktan
-          sonra belirli sayıda
-          oyuncuyu çalıştırır.
-          Süre bittiğinde yeniden
-          oyuncu göndermen gerekir.
+          Antrenör satın al ve
+          uygun oyuncularını
+          çalıştır.
         </InfoBox>
 
         <div className="coach-grid">
@@ -5691,21 +5810,14 @@ function App() {
                   </div>
 
                   <h3>
-                    {
-                      coach.name
-                    }
+                    {coach.name}
                   </h3>
 
                   <p>
-                    {
-                      coach.slots
-                    }{" "}
+                    {coach.slots}{" "}
                     oyuncu •{" "}
-                    {
-                      coach.minutes
-                    }{" "}
-                    dk • kişi başı
-                    +1 GEN
+                    {coach.minutes}{" "}
+                    dk • +1 GEN
                   </p>
 
                   {session ? (
@@ -5760,18 +5872,13 @@ function App() {
         <div className="page-card">
           <PageHeader
             title="KİRALIK OYUNCU MERKEZİ"
-            subtitle="Oyuncularından pasif gelir kazan"
+            subtitle="Pasif gelir sistemi"
+            backTo="shopping-menu"
           />
 
           <InfoBox>
-            Oyuncuyu maksimum 8
+            Oyuncunu maksimum 8
             saat kiraya gönder.
-            Kiradayken maçlarda
-            kullanılamaz. Kazanç
-            merkezde birikir ve
-            sen PARAYI TOPLA
-            dediğinde hesabına
-            geçer.
           </InfoBox>
 
           <div className="panel">
@@ -5780,8 +5887,7 @@ function App() {
             </div>
 
             <p>
-              Kiralık Oyuncu
-              Merkezi'ni aç.
+              Merkezi aç.
             </p>
 
             <button
@@ -5818,16 +5924,8 @@ function App() {
         <PageHeader
           title="KİRALIK OYUNCU MERKEZİ"
           subtitle={`${activeRentals.length}/${game.rentalCenter.slotsUnlocked} slot kullanımda`}
+          backTo="shopping-menu"
         />
-
-        <InfoBox>
-          8 saatlik kazanç
-          yaklaşık oyuncunun GEN ×
-          80 değeridir. Oyuncuyu
-          erken çağırırsan o ana
-          kadar oluşan kazancı
-          alırsın.
-        </InfoBox>
 
         <div className="panel">
           <span>
@@ -5867,7 +5965,7 @@ function App() {
               unlockRentalSlot
             }
           >
-            + YENİ SLOT AÇ •{" "}
+            + YENİ SLOT •{" "}
             {nextSlotPrice.toLocaleString()}
           </button>
         )}
@@ -5898,9 +5996,7 @@ function App() {
                   </strong>
 
                   <p>
-                    {
-                      player?.overall
-                    }{" "}
+                    {player?.overall}{" "}
                     GEN
                   </p>
 
@@ -5993,18 +6089,15 @@ function App() {
     return (
       <div className="page-card">
         <PageHeader
-          title="ETKİNLİK"
+          title="ETKİNLİK MAÇI"
           subtitle={`Aşama ${game.activeStage}`}
+          backTo="match-menu"
         />
 
         <InfoBox>
-          Her galibiyetten sonra
-          üç kapalı karttan birini
-          seçersin. Ayrıca her
-          maçtan GEN paketi
-          kazanırsın. Maçlar
-          arasında 30 saniye
-          bekleme vardır.
+          Galibiyette üç kapalı
+          karttan birini seç ve GEN
+          paketi kazan.
         </InfoBox>
 
         <div className="tabs">
@@ -6035,12 +6128,8 @@ function App() {
                     )
                   }
                 >
-                  {
-                    event.icon
-                  }{" "}
-                  {
-                    event.name
-                  }
+                  {event.icon}{" "}
+                  {event.name}
                 </button>
               );
             }
@@ -6049,35 +6138,14 @@ function App() {
 
         <div className="panel">
           <h2>
-            {
-              activeEvent.icon
-            }{" "}
-            {
-              activeEvent.name
-            }
+            {activeEvent.icon}{" "}
+            {activeEvent.name}
           </h2>
 
           <p>
             Maç{" "}
-            {
-              eventState.match
-            }{" "}
-            /{" "}
-            {
-              activeEvent.matches
-            }
-          </p>
-
-          <p>
-            {
-              activeEvent.currencyIcon
-            }{" "}
-            {
-              eventState.currency
-            }{" "}
-            {
-              activeEvent.currencyName
-            }
+            {eventState.match} /{" "}
+            {activeEvent.matches}
           </p>
 
           {cooldown >
@@ -6161,19 +6229,15 @@ function App() {
     return (
       <div className="page-card">
         <PageHeader
-          title="🔥 KARİYER"
+          title="🔥 KARİYER MAÇI"
           subtitle={`Aşama ${game.activeStage} • Maç ${game.career.match}/10`}
+          backTo="match-menu"
         />
 
         <InfoBox>
-          Kariyer ve etkinlik
-          birlikte ilerler. Her
-          kariyer galibiyetinde üç
-          rakip kart arasından bir
-          oyuncu seçersin.
-          Beraberlikte kayıp olmaz
-          ve yarım Coin ödülü
-          alırsın.
+          Her galibiyette rakip
+          kartlardan birini
+          kazanırsın.
         </InfoBox>
 
         <div className="panel">
@@ -6186,7 +6250,7 @@ function App() {
           </div>
 
           <p>
-            Kariyer maçı için en
+            Kariyere girmek için en
             az 11 aktif oyuncu
             gerekir.
           </p>
@@ -6200,8 +6264,7 @@ function App() {
               )
             }
           >
-            🔥 KARİYER MAÇINA
-            GİR
+            🔥 MAÇA GİR
           </button>
         </div>
       </div>
@@ -6254,17 +6317,10 @@ function App() {
           </h1>
 
           <p className="section-subtitle">
-            Sadece bir kart
-            açabilirsin. Seçtiğin
-            oyuncu senin olacak.
+            Bir kart seç.
           </p>
 
-          <div
-            className="reward-grid"
-            style={{
-              marginTop: 18,
-            }}
-          >
+          <div className="reward-grid">
             {battle.rewardChoices.map(
               (player) => (
                 <button
@@ -6299,10 +6355,7 @@ function App() {
           </h1>
 
           <p className="section-subtitle">
-            Maçı kaybettin.
-            Minimum kadro yapısını
-            bozmayan kartlardan
-            birini kaybedeceksin.
+            Kaybedeceğin kartı seç.
           </p>
 
           <div className="player-grid">
@@ -6353,9 +6406,7 @@ function App() {
               Beraberlikte kart
               kaybı yok. Yarım
               ödül: 🪙{" "}
-              {
-                result.coinReward
-              }
+              {result.coinReward}
             </div>
           )}
 
@@ -6499,21 +6550,15 @@ function App() {
 
         {battle.phase ===
           "result-ready" && (
-          <>
-            <div className="notice">
-              5 tur tamamlandı.
-            </div>
-
-            <button
-              type="button"
-              className="primary-button"
-              onClick={
-                settleBattle
-              }
-            >
-              SONUCU GÖR
-            </button>
-          </>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={
+              settleBattle
+            }
+          >
+            SONUCU GÖR
+          </button>
         )}
       </div>
     );
@@ -6524,7 +6569,9 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="PROFİL"
-          subtitle={game.clubName}
+          subtitle={
+            game.clubName
+          }
         />
 
         <div className="profile-stat-grid">
@@ -6547,10 +6594,8 @@ function App() {
             </span>
 
             <strong>
-              {
-                game.activeStage
-              }{" "}
-              / 10
+              {game.activeStage} /
+              10
             </strong>
           </div>
 
@@ -6560,9 +6605,7 @@ function App() {
             </span>
 
             <strong>
-              {
-                ownedPlayers.length
-              }
+              {ownedPlayers.length}
             </strong>
           </div>
 
@@ -6586,16 +6629,9 @@ function App() {
 
         <div className="panel">
           <div className="setting-row">
-            <div>
-              <strong>
-                Bilgilendirmeler
-              </strong>
-
-              <p className="section-subtitle">
-                Bölüm açıklamalarını
-                göster.
-              </p>
-            </div>
+            <strong>
+              Bilgilendirmeler
+            </strong>
 
             <button
               type="button"
@@ -6619,15 +6655,15 @@ function App() {
           {[
             [
               "daily",
-              "Günlük ödül bildirimi",
+              "Günlük ödül",
             ],
             [
               "training",
-              "Antrenman bildirimi",
+              "Antrenman",
             ],
             [
               "rental",
-              "Kiralık oyuncu bildirimi",
+              "Kiralama",
             ],
           ].map(
             ([key, label]) => (
@@ -6636,8 +6672,7 @@ function App() {
                 key={key}
               >
                 <strong>
-                  🔔{" "}
-                  {label}
+                  🔔 {label}
                 </strong>
 
                 <button
@@ -6668,17 +6703,9 @@ function App() {
           )}
 
           <div className="setting-row">
-            <div>
-              <strong>
-                Uygulama
-              </strong>
-
-              <p className="section-subtitle">
-                {installed
-                  ? "Bu cihazda kurulu."
-                  : "Telefona uygulama olarak yükle."}
-              </p>
-            </div>
+            <strong>
+              Uygulama
+            </strong>
 
             <button
               type="button"
@@ -6718,14 +6745,13 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="MAĞAZA"
-          subtitle="Şu anda test ödeme modu"
+          subtitle="Coin ve promosyonlar"
+          backTo="shopping-menu"
         />
 
         <div className="notice">
-          ⚠️ Gerçek para tahsilatı
-          henüz aktif değil.
-          Butonlar test için Coin
-          ekler.
+          ⚠️ Şu anda test ödeme
+          modu aktiftir.
         </div>
 
         <div className="shop-grid">
@@ -6827,9 +6853,6 @@ function App() {
             <button
               type="button"
               className="primary-button"
-              style={{
-                marginTop: 15,
-              }}
               onClick={() =>
                 setStarted(
                   true
@@ -6844,9 +6867,7 @@ function App() {
     );
   }
 
-  if (
-    !game.clubName
-  ) {
+  if (!game.clubName) {
     return (
       <div className="app-shell">
         <div className="setup-screen">
@@ -6865,9 +6886,10 @@ function App() {
             </h1>
 
             <p className="section-subtitle">
-              Başlangıçta 2 Forvet,
-              3 Orta Saha, 4 Defans
-              ve 1 Kaleci verilir.
+              2 Forvet •
+              3 Orta Saha •
+              4 Defans •
+              1 Kaleci
             </p>
 
             <label className="field-label">
@@ -6885,7 +6907,6 @@ function App() {
                     .value
                 )
               }
-              placeholder="Kulüp adın"
             />
 
             <button
@@ -6933,6 +6954,21 @@ function App() {
           {screen ===
             "home" && (
             <HomeScreen />
+          )}
+
+          {screen ===
+            "match-menu" && (
+            <MatchMenuScreen />
+          )}
+
+          {screen ===
+            "team-menu" && (
+            <TeamMenuScreen />
+          )}
+
+          {screen ===
+            "shopping-menu" && (
+            <ShoppingMenuScreen />
           )}
 
           {screen ===
