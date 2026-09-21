@@ -27,7 +27,6 @@ import {
   getUpgradePackReward,
   positionGroups,
   positions,
-  randomItem,
   rentalCenterConfig,
   shuffle,
   stageRewards,
@@ -54,6 +53,15 @@ import {
 import {
   buildBestLineup,
 } from "./utils/autoLineup";
+
+import {
+  calculateEventCurrencyReward,
+  calculateRoundResult,
+  chooseOpponentForRound,
+  createRandomFiveRounds,
+  getAvailablePlayersForRound,
+  getRoundLabel,
+} from "./utils/battleEngine";
 
 const SAVE_KEY =
   "soccer-cards-war-save-v5";
@@ -149,14 +157,6 @@ const TEAM_SLOTS = [
     label: "KALECİ",
     group: "goalkeeper",
   },
-];
-
-const MATCH_GROUP_ORDER = [
-  "forward",
-  "midfield",
-  "defense",
-  "midfield",
-  "goalkeeper",
 ];
 
 const APP_CSS = `
@@ -511,11 +511,6 @@ const APP_CSS = `
     color: #ffe1a1;
     font-weight: 1000;
     background:
-      radial-gradient(
-        circle at 15% 50%,
-        rgba(255,195,62,.22),
-        transparent 40%
-      ),
       linear-gradient(
         135deg,
         #5a3f10,
@@ -543,6 +538,19 @@ const APP_CSS = `
     color: #f1cd79;
     font-weight: 850;
     font-size: 11px;
+  }
+
+  .event-money {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0;
+    padding: 8px 12px;
+    border: 1px solid #8e5720;
+    border-radius: 12px;
+    background: #2e1a09;
+    color: #ffb654;
+    font-weight: 1000;
   }
 
   .player-grid {
@@ -599,7 +607,6 @@ const APP_CSS = `
     margin-top: 5px;
     font-size: 8px;
     font-weight: 1000;
-    letter-spacing: .08em;
     color: #8c96a2;
   }
 
@@ -634,45 +641,10 @@ const APP_CSS = `
     font-weight: 950;
   }
 
-  .rarity-rare {
-    border-color: #3975a8;
-  }
-
-  .rarity-gold {
-    border-color: #a17a2a;
-    background:
-      linear-gradient(
-        145deg,
-        #35280d,
-        #10100a
-      );
-  }
-
-  .rarity-platinum {
-    border-color: #66a6a8;
-  }
-
-  .rarity-epic {
-    border-color: #75489f;
-  }
-
-  .rarity-legendary {
-    border-color: #bb6b2a;
-  }
-
-  .rarity-icon {
-    border-color: #d8d1a4;
-  }
-
   .player-card-elturco,
   .rarity-elturco {
     border: 2px solid #ff9d27;
     background:
-      radial-gradient(
-        circle at 50% 100%,
-        rgba(255,69,0,.42),
-        transparent 42%
-      ),
       linear-gradient(
         145deg,
         #501506,
@@ -774,17 +746,6 @@ const APP_CSS = `
     background: #0d1218;
   }
 
-  .list-item h3 {
-    margin: 0 0 3px;
-    font-size: 13px;
-  }
-
-  .list-item p {
-    margin: 0;
-    color: #77818d;
-    font-size: 10px;
-  }
-
   .action-row {
     display: flex;
     flex-wrap: wrap;
@@ -843,8 +804,8 @@ const APP_CSS = `
   .battle-hand {
     display: grid;
     grid-template-columns:
-      repeat(3, minmax(0,1fr));
-    gap: 9px;
+      repeat(2, minmax(0,1fr));
+    gap: 10px;
   }
 
   .battle-group {
@@ -852,6 +813,34 @@ const APP_CSS = `
     margin: 14px 0;
     font-size: 18px;
     font-weight: 1000;
+  }
+
+  .round-plan {
+    display: flex;
+    gap: 6px;
+    margin: 12px 0;
+    overflow-x: auto;
+  }
+
+  .round-chip {
+    flex: 0 0 auto;
+    padding: 6px 9px;
+    border-radius: 20px;
+    border: 1px solid #303840;
+    background: #10151b;
+    color: #747f8a;
+    font-size: 9px;
+    font-weight: 950;
+  }
+
+  .round-chip.active {
+    border-color: #a77129;
+    background: #35230c;
+    color: #ffd489;
+  }
+
+  .round-chip.done {
+    opacity: .5;
   }
 
   .reward-card-back {
@@ -1032,11 +1021,6 @@ const APP_CSS = `
         repeat(2, minmax(0,1fr));
     }
 
-    .battle-hand {
-      grid-template-columns:
-        repeat(2, minmax(0,1fr));
-    }
-
     .top-right .currency:nth-child(2),
     .top-right .currency:nth-child(3) {
       display: none;
@@ -1060,11 +1044,6 @@ const APP_CSS = `
     .folder-card {
       min-height: 125px;
       padding: 12px;
-    }
-
-    .menu-card strong,
-    .folder-card strong {
-      font-size: 15px;
     }
 
     .reward-grid {
@@ -1506,9 +1485,7 @@ function App() {
 
       if (saved) {
         return normalizeGame(
-          JSON.parse(
-            saved
-          )
+          JSON.parse(saved)
         );
       }
 
@@ -1519,9 +1496,7 @@ function App() {
 
       if (old) {
         return normalizeGame(
-          JSON.parse(
-            old
-          )
+          JSON.parse(old)
         );
       }
     } catch {
@@ -1564,7 +1539,10 @@ function App() {
   const [
     activeEventId,
     setActiveEventId,
-  ] = useState("street");
+  ] = useState(
+    eventConfigs[0]?.id ||
+      "street25"
+  );
 
   const [
     battle,
@@ -2083,11 +2061,12 @@ function App() {
   const activeEvent =
     getEventConfig(
       activeEventId
-    );
+    ) ||
+    eventConfigs[0];
 
   const currentEventState =
     game.events?.[
-      activeEventId
+      activeEvent?.id
     ];
 
   const stageCap =
@@ -2489,7 +2468,7 @@ function App() {
       return {
         valid: false,
         message:
-          `${busy.name} şu anda kullanılamıyor. Yerine başka oyuncu koy.`,
+          `${busy.name} şu anda kullanılamıyor.`,
       };
     }
 
@@ -2604,12 +2583,15 @@ function App() {
         10
       );
 
+    const groupOrder =
+      createRandomFiveRounds();
+
     setBattle({
       mode,
 
       eventId:
         mode === "event"
-          ? activeEventId
+          ? activeEvent.id
           : null,
 
       stage,
@@ -2625,8 +2607,7 @@ function App() {
 
       opponentDeck,
 
-      groupOrder:
-        MATCH_GROUP_ORDER,
+      groupOrder,
 
       round: 0,
 
@@ -2637,6 +2618,8 @@ function App() {
       usedPlayerIds: [],
 
       usedOpponentIds: [],
+
+      history: [],
 
       reveal: null,
 
@@ -2662,58 +2645,47 @@ function App() {
         battle.round
       ];
 
-    const playerGroup =
-      player.positionGroup ||
-      getPositionGroup(
-        player.position
+    const availablePlayers =
+      getAvailablePlayersForRound(
+        battle.playerDeck,
+        group,
+        battle.usedPlayerIds
       );
 
     if (
-      playerGroup !== group
-    ) {
-      showNotice(
-        `Bu turda sadece ${positionGroups[
-          group
-        ].name} oynayabilirsin.`
-      );
-      return;
-    }
-
-    if (
-      battle.usedPlayerIds.includes(
-        player.id
+      !availablePlayers.some(
+        (item) =>
+          item.id ===
+          player.id
       )
     ) {
+      showNotice(
+        `Bu turda sadece kullanılmamış ${getRoundLabel(
+          group
+        )} oyuncusu seçebilirsin.`
+      );
       return;
     }
 
-    const opponentChoices =
-      battle.opponentDeck.filter(
-        (item) => {
-          const itemGroup =
-            item.positionGroup ||
-            getPositionGroup(
-              item.position
-            );
-
-          return (
-            itemGroup ===
-              group &&
-            !battle.usedOpponentIds.includes(
-              item.id
-            )
-          );
-        }
-      );
-
     const opponent =
-      randomItem(
-        opponentChoices
+      chooseOpponentForRound(
+        battle.opponentDeck,
+        group,
+        battle.usedOpponentIds
       );
 
     if (!opponent) {
+      showNotice(
+        "Rakip için uygun kart bulunamadı."
+      );
       return;
     }
+
+    const roundResult =
+      calculateRoundResult(
+        player,
+        opponent
+      );
 
     let playerScore =
       battle.playerScore;
@@ -2722,13 +2694,15 @@ function App() {
       battle.opponentScore;
 
     if (
-      player.overall >
-      opponent.overall
+      roundResult ===
+      "win"
     ) {
       playerScore += 1;
-    } else if (
-      player.overall <
-      opponent.overall
+    }
+
+    if (
+      roundResult ===
+      "loss"
     ) {
       opponentScore += 1;
     }
@@ -2737,9 +2711,15 @@ function App() {
       battle.round + 1;
 
     const finished =
-      nextRound >=
-      battle.groupOrder
-        .length;
+      nextRound >= 5;
+
+    const historyItem = {
+      group,
+      player,
+      opponent,
+      result:
+        roundResult,
+    };
 
     setBattle({
       ...battle,
@@ -2761,10 +2741,12 @@ function App() {
         opponent.id,
       ],
 
-      reveal: {
-        player,
-        opponent,
-      },
+      history: [
+        ...battle.history,
+        historyItem,
+      ],
+
+      reveal: historyItem,
 
       phase:
         finished
@@ -2825,6 +2807,12 @@ function App() {
       event.rewardBase +
       state.match *
         event.rewardStep;
+
+    const eventCurrencyReward =
+      calculateEventCurrencyReward(
+        event,
+        state.match
+      );
 
     if (draw) {
       setGame(
@@ -2956,6 +2944,12 @@ function App() {
                 event.id
               ].wins + 1,
 
+            currency:
+              previous.events[
+                event.id
+              ].currency +
+              eventCurrencyReward,
+
             nextMatchAt:
               Date.now() +
               EVENT_MATCH_COOLDOWN_MS,
@@ -2976,6 +2970,11 @@ function App() {
       rewardContext: {
         coinReward,
         packType,
+        eventCurrencyReward,
+        eventCurrencyIcon:
+          event.currencyIcon,
+        eventCurrencyName:
+          event.currencyName,
       },
     });
   }
@@ -3727,7 +3726,7 @@ function App() {
     );
 
     showNotice(
-      `${config.name} ${selected.length} oyuncuyla çalışmaya başladı.`
+      `${config.name} çalışmaya başladı.`
     );
   }
 
@@ -4098,7 +4097,7 @@ function App() {
         player.eventPrice
       ) {
         showNotice(
-          "Etkinlik paran yetersiz."
+          `Yeterli ${event.currencyName} yok.`
         );
 
         setPurchaseModal(
@@ -4148,10 +4147,6 @@ function App() {
             },
           },
         })
-      );
-
-      showNotice(
-        `${player.name}, ${event.name} mağazasından alındı.`
       );
     }
 
@@ -4468,9 +4463,7 @@ function App() {
   function buyTestCoins(
     pack
   ) {
-    if (
-      !STORE_TEST_MODE
-    ) {
+    if (!STORE_TEST_MODE) {
       return;
     }
 
@@ -4698,15 +4691,13 @@ function App() {
             className="gold-button"
             style={{
               width: "100%",
-              marginBottom:
-                12,
+              marginBottom: 12,
             }}
             onClick={
               claimDaily
             }
           >
-            🎁 GÜNLÜK ÖDÜLÜ
-            AL
+            🎁 GÜNLÜK ÖDÜLÜ AL
           </button>
         )}
 
@@ -4730,7 +4721,6 @@ function App() {
 
             <span>
               Kariyer ve etkinlik
-              maçlarına gir
             </span>
           </button>
 
@@ -4776,8 +4766,8 @@ function App() {
             </strong>
 
             <span>
-              Mağaza, transfer ve
-              kiralık oyuncular
+              Mağaza, transfer,
+              kiralama
             </span>
           </button>
         </div>
@@ -4790,7 +4780,7 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="⚽ MAÇ"
-          subtitle="Oynamak istediğin modu seç."
+          subtitle="Maç modunu seç."
         />
 
         <div className="folder-grid">
@@ -4810,13 +4800,6 @@ function App() {
             <strong>
               KARİYER MAÇI
             </strong>
-
-            <span>
-              Aşama{" "}
-              {game.activeStage} •
-              Maç{" "}
-              {game.career.match}
-            </span>
           </button>
 
           <button
@@ -4835,11 +4818,6 @@ function App() {
             <strong>
               ETKİNLİK MAÇI
             </strong>
-
-            <span>
-              Kart seç, GEN
-              paketleri kazan
-            </span>
           </button>
         </div>
       </div>
@@ -4851,7 +4829,6 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="👥 TAKIMIM"
-          subtitle="Kulübünün sportif bölümü."
         />
 
         <div className="folder-grid">
@@ -4871,11 +4848,6 @@ function App() {
             <strong>
               KADRO
             </strong>
-
-            <span>
-              İlk 10'unu düzenle
-              veya otomatik kur
-            </span>
           </button>
 
           <button
@@ -4894,11 +4866,6 @@ function App() {
             <strong>
               ANTRENMAN
             </strong>
-
-            <span>
-              Oyuncularını GEN
-              olarak geliştir
-            </span>
           </button>
 
           <button
@@ -4917,11 +4884,6 @@ function App() {
             <strong>
               KOLEKSİYON
             </strong>
-
-            <span>
-              Sahip olduğun ve
-              geçmiş kartlarını gör
-            </span>
           </button>
 
           <button
@@ -4940,11 +4902,6 @@ function App() {
             <strong>
               ANTRENÖRLER
             </strong>
-
-            <span>
-              Antrenör satın al ve
-              oyuncularını geliştir
-            </span>
           </button>
         </div>
       </div>
@@ -4956,7 +4913,6 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="🛒 ALIŞVERİŞ"
-          subtitle="Kulüp ekonomisi ve oyuncu işlemleri."
         />
 
         <div className="folder-grid">
@@ -4976,11 +4932,6 @@ function App() {
             <strong>
               MAĞAZA
             </strong>
-
-            <span>
-              Coin paketleri ve
-              promosyon kodları
-            </span>
           </button>
 
           <button
@@ -4999,11 +4950,6 @@ function App() {
             <strong>
               TRANSFER
             </strong>
-
-            <span>
-              Oyuncu satın al ve
-              oyuncu sat
-            </span>
           </button>
 
           <button
@@ -5022,11 +4968,6 @@ function App() {
             <strong>
               KİRALIK MERKEZİ
             </strong>
-
-            <span>
-              Oyuncularından pasif
-              Coin geliri kazan
-            </span>
           </button>
         </div>
       </div>
@@ -5076,18 +5017,13 @@ function App() {
             }}
           >
             <span className="slot-name">
-              {
-                item.slot
-                  .label
-              }
+              {item.slot.label}
             </span>
 
             {player ? (
               <>
                 <span className="slot-overall">
-                  {
-                    player.overall
-                  }
+                  {player.overall}
                 </span>
 
                 <span className="slot-player-name">
@@ -5098,9 +5034,7 @@ function App() {
                 </span>
 
                 <small>
-                  {
-                    player.position
-                  }
+                  {player.position}
                 </small>
               </>
             ) : (
@@ -5130,45 +5064,29 @@ function App() {
           ⚡ EN İYİ KADROYU KUR
         </button>
 
-        <InfoBox>
-          Tek tuşla mevcut aşama
-          sınırına uygun en güçlü
-          2 Forvet, 3 Orta Saha,
-          4 Defans ve 1 Kaleci
-          otomatik yerleşir.
-        </InfoBox>
-
         <div className="team-field">
           <div className="team-row two">
             {formationPlayers
               .slice(0, 2)
-              .map(
-                renderSlot
-              )}
+              .map(renderSlot)}
           </div>
 
           <div className="team-row three">
             {formationPlayers
               .slice(2, 5)
-              .map(
-                renderSlot
-              )}
+              .map(renderSlot)}
           </div>
 
           <div className="team-row four">
             {formationPlayers
               .slice(5, 9)
-              .map(
-                renderSlot
-              )}
+              .map(renderSlot)}
           </div>
 
           <div className="team-row one">
             {formationPlayers
               .slice(9, 10)
-              .map(
-                renderSlot
-              )}
+              .map(renderSlot)}
           </div>
         </div>
 
@@ -5178,12 +5096,8 @@ function App() {
             ? `✅ Kadro hazır • Ortalama GEN ${averageOverall(
                 deck
               )}`
-            : "⚠️ Kadroyu tamamla: 2 Forvet + 3 Orta Saha + 4 Defans + 1 Kaleci"}
+            : "⚠️ 2 Forvet + 3 Orta Saha + 4 Defans + 1 Kaleci gerekli."}
         </div>
-
-        <h2>
-          Oyuncular
-        </h2>
 
         <div className="player-grid">
           {ownedPlayers.map(
@@ -5238,16 +5152,8 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="KOLEKSİYON"
-          subtitle={`${game.collection.length} keşfedilmiş kart`}
           backTo="team-menu"
         />
-
-        <InfoBox>
-          Satılan oyuncular burada
-          geçmiş kart olarak
-          görünür. Aşama ödülleri
-          açılmadan önce kilitlidir.
-        </InfoBox>
 
         <h2>
           Aşama Ödülleri
@@ -5273,26 +5179,19 @@ function App() {
                   }`}
                 >
                   <div className="big-number">
-                    {
-                      reward.overall
-                    }
+                    {reward.overall}
                   </div>
 
                   <strong>
                     {getCountryFlag(
                       reward.country
                     )}{" "}
-                    {
-                      reward.name
-                    }
+                    {reward.name}
                   </strong>
 
                   <p>
                     Aşama{" "}
-                    {
-                      reward.stage
-                    }{" "}
-                    Ödülü
+                    {reward.stage}
                   </p>
 
                   <span className="status-pill">
@@ -5336,15 +5235,8 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="TRANSFER"
-          subtitle={`Market sınırı: ${game.marketCap} GEN`}
           backTo="shopping-menu"
         />
-
-        <InfoBox>
-          Oyuncu satın alabilir ve
-          sahip olduğun oyuncuları
-          satabilirsin.
-        </InfoBox>
 
         <button
           type="button"
@@ -5353,8 +5245,7 @@ function App() {
             refreshMarket
           }
         >
-          🔄 MARKETİ YENİLE •
-          100
+          🔄 MARKETİ YENİLE • 100
         </button>
 
         <h2>
@@ -5448,10 +5339,6 @@ function App() {
         </h2>
 
         <div className="panel">
-          <label className="field-label">
-            İsim
-          </label>
-
           <input
             className="text-input"
             value={
@@ -5463,11 +5350,8 @@ function App() {
                   .value
               )
             }
+            placeholder="Oyuncu adı"
           />
-
-          <label className="field-label">
-            Pozisyon
-          </label>
 
           <select
             className="select-input"
@@ -5497,10 +5381,6 @@ function App() {
             )}
           </select>
 
-          <label className="field-label">
-            Milliyet
-          </label>
-
           <select
             className="select-input"
             value={
@@ -5523,12 +5403,8 @@ function App() {
                     country.code
                   }
                 >
-                  {
-                    country.flag
-                  }{" "}
-                  {
-                    country.name
-                  }
+                  {country.flag}{" "}
+                  {country.name}
                 </option>
               )
             )}
@@ -5537,10 +5413,6 @@ function App() {
           <button
             type="button"
             className="gold-button"
-            style={{
-              width: "100%",
-              marginTop: 12,
-            }}
             onClick={
               createMyPlayer
             }
@@ -5567,57 +5439,36 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="ANTRENMAN"
-          subtitle={`Aşama sınırı: ${game.trainingCap} GEN`}
           backTo="team-menu"
         />
 
-        <InfoBox>
-          Coin veya GEN paketiyle
-          oyuncunu geliştir.
-          Antrenmandaki oyuncu
-          maçta kullanılamaz.
-        </InfoBox>
-
         <div className="notice">
           📦 +1:{" "}
-          {
-            game.upgradePacks
-              .gen1
-          }{" "}
-          • +2:{" "}
-          {
-            game.upgradePacks
-              .gen2
-          }{" "}
-          • +4:{" "}
-          {
-            game.upgradePacks
-              .gen4
-          }
+          {game.upgradePacks.gen1}
+          {" • "}
+          +2:{" "}
+          {game.upgradePacks.gen2}
+          {" • "}
+          +4:{" "}
+          {game.upgradePacks.gen4}
         </div>
 
         {game.training &&
         currentPlayer ? (
           <div className="panel">
             <h2>
-              🏋️{" "}
-              {
-                currentPlayer.name
-              }
+              {currentPlayer.name}
             </h2>
 
             <p>
-              Kalan:{" "}
-              <strong>
-                {millisecondsToClock(
-                  Math.max(
-                    0,
-                    game.training
-                      .endsAt -
-                      now
-                  )
-                )}
-              </strong>
+              {millisecondsToClock(
+                Math.max(
+                  0,
+                  game.training
+                    .endsAt -
+                    now
+                )
+              )}
             </p>
 
             <button
@@ -5631,16 +5482,11 @@ function App() {
               {calculateSpeedUpCost(
                 game.training,
                 now
-              )}{" "}
-              COIN
+              )}
             </button>
           </div>
         ) : (
           <>
-            <h2>
-              Oyuncu Seç
-            </h2>
-
             <div className="player-grid">
               {ownedPlayers.map(
                 (player) => (
@@ -5671,10 +5517,6 @@ function App() {
               )}
             </div>
 
-            <h2>
-              Program
-            </h2>
-
             <div className="list-grid">
               {trainingPlans.map(
                 (plan) => {
@@ -5701,21 +5543,15 @@ function App() {
                       className="list-item"
                     >
                       <div>
-                        <h3>
-                          {
-                            plan.title
-                          }
-                        </h3>
+                        <strong>
+                          {plan.title}
+                        </strong>
 
                         <p>
-                          {
-                            plan.duration
-                          }{" "}
-                          • +
-                          {
-                            plan.gain
-                          }{" "}
-                          GEN
+                          {plan.duration}
+                          {" • +"}
+                          {plan.gain}
+                          {" GEN"}
                         </p>
                       </div>
 
@@ -5730,8 +5566,7 @@ function App() {
                             )
                           }
                         >
-                          🪙{" "}
-                          {cost}
+                          🪙 {cost}
                         </button>
 
                         <button
@@ -5746,8 +5581,10 @@ function App() {
                         >
                           📦{" "}
                           {
-                            game.upgradePacks[
-                              plan.packType
+                            game
+                              .upgradePacks[
+                              plan
+                                .packType
                             ]
                           }
                         </button>
@@ -5768,15 +5605,8 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="ANTRENÖRLER"
-          subtitle="Uzun vadeli oyuncu gelişimi"
           backTo="team-menu"
         />
-
-        <InfoBox>
-          Antrenör satın al ve
-          uygun oyuncularını
-          çalıştır.
-        </InfoBox>
 
         <div className="coach-grid">
           {coachConfigs.map(
@@ -5814,15 +5644,13 @@ function App() {
                   </h3>
 
                   <p>
-                    {coach.slots}{" "}
-                    oyuncu •{" "}
-                    {coach.minutes}{" "}
-                    dk • +1 GEN
+                    {coach.slots} oyuncu
+                    {" • "}
+                    {coach.minutes} dk
                   </p>
 
                   {session ? (
                     <div className="status-pill">
-                      ÇALIŞIYOR •{" "}
                       {millisecondsToClock(
                         session.endsAt -
                           now
@@ -5871,35 +5699,19 @@ function App() {
       return (
         <div className="page-card">
           <PageHeader
-            title="KİRALIK OYUNCU MERKEZİ"
-            subtitle="Pasif gelir sistemi"
+            title="KİRALIK MERKEZİ"
             backTo="shopping-menu"
           />
 
-          <InfoBox>
-            Oyuncunu maksimum 8
-            saat kiraya gönder.
-          </InfoBox>
-
-          <div className="panel">
-            <div className="big-number">
-              🪙 1.000
-            </div>
-
-            <p>
-              Merkezi aç.
-            </p>
-
-            <button
-              type="button"
-              className="gold-button"
-              onClick={
-                unlockRentalCenter
-              }
-            >
-              MERKEZİ AÇ
-            </button>
-          </div>
+          <button
+            type="button"
+            className="gold-button"
+            onClick={
+              unlockRentalCenter
+            }
+          >
+            MERKEZİ AÇ • 1.000
+          </button>
         </div>
       );
     }
@@ -5922,16 +5734,11 @@ function App() {
     return (
       <div className="page-card">
         <PageHeader
-          title="KİRALIK OYUNCU MERKEZİ"
-          subtitle={`${activeRentals.length}/${game.rentalCenter.slotsUnlocked} slot kullanımda`}
+          title="KİRALIK MERKEZİ"
           backTo="shopping-menu"
         />
 
         <div className="panel">
-          <span>
-            Birikmiş Kazanç
-          </span>
-
           <div className="big-number">
             🪙{" "}
             {game.rentalCenter.pendingCoins.toLocaleString()}
@@ -5940,10 +5747,6 @@ function App() {
           <button
             type="button"
             className="gold-button"
-            disabled={
-              game.rentalCenter
-                .pendingCoins <= 0
-            }
             onClick={
               collectRentalMoney
             }
@@ -5957,22 +5760,14 @@ function App() {
           <button
             type="button"
             className="blue-button"
-            style={{
-              width: "100%",
-              marginTop: 12,
-            }}
             onClick={
               unlockRentalSlot
             }
           >
-            + YENİ SLOT •{" "}
+            + SLOT •{" "}
             {nextSlotPrice.toLocaleString()}
           </button>
         )}
-
-        <h2>
-          Kiradaki Oyuncular
-        </h2>
 
         <div className="rental-slot-grid">
           {activeRentals.map(
@@ -5996,12 +5791,6 @@ function App() {
                   </strong>
 
                   <p>
-                    {player?.overall}{" "}
-                    GEN
-                  </p>
-
-                  <p>
-                    Kalan:{" "}
                     {millisecondsToClock(
                       rental.endsAt -
                         now
@@ -6025,10 +5814,6 @@ function App() {
           )}
         </div>
 
-        <h2>
-          Oyuncu Gönder
-        </h2>
-
         <div className="player-grid">
           {ownedPlayers.map(
             (player) => (
@@ -6041,23 +5826,11 @@ function App() {
                   player={
                     player
                   }
-                  disabled={
-                    isPlayerBusy(
-                      player,
-                      game
-                    )
-                  }
                 />
 
                 <button
                   type="button"
                   className="blue-button"
-                  style={{
-                    width:
-                      "100%",
-                    marginTop:
-                      6,
-                  }}
                   onClick={() =>
                     rentPlayer(
                       player
@@ -6075,14 +5848,16 @@ function App() {
   }
 
   function EventsScreen() {
-    const eventState =
-      game.events[
-        activeEventId
-      ];
+    if (
+      !activeEvent ||
+      !currentEventState
+    ) {
+      return null;
+    }
 
     const cooldown =
       getEventCooldownRemaining(
-        eventState,
+        currentEventState,
         now
       );
 
@@ -6090,15 +5865,8 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="ETKİNLİK MAÇI"
-          subtitle={`Aşama ${game.activeStage}`}
           backTo="match-menu"
         />
-
-        <InfoBox>
-          Galibiyette üç kapalı
-          karttan birini seç ve GEN
-          paketi kazan.
-        </InfoBox>
 
         <div className="tabs">
           {eventConfigs.map(
@@ -6144,12 +5912,18 @@ function App() {
 
           <p>
             Maç{" "}
-            {eventState.match} /{" "}
+            {currentEventState.match}
+            {" / "}
             {activeEvent.matches}
           </p>
 
-          {cooldown >
-          0 ? (
+          <div className="event-money">
+            {activeEvent.currencyIcon}{" "}
+            {currentEventState.currency.toLocaleString()}{" "}
+            {activeEvent.currencyName}
+          </div>
+
+          {cooldown > 0 ? (
             <button
               type="button"
               className="secondary-button"
@@ -6176,11 +5950,11 @@ function App() {
         </div>
 
         <h2>
-          Etkinlik Transferleri
+          Etkinlik Mağazası
         </h2>
 
         <div className="player-grid">
-          {eventState.shop.map(
+          {currentEventState.shop.map(
             (player) => (
               <div
                 key={
@@ -6202,16 +5976,10 @@ function App() {
                 <button
                   type="button"
                   className="blue-button"
-                  style={{
-                    width:
-                      "100%",
-                    marginTop:
-                      6,
-                  }}
                   onClick={() =>
                     confirmBuyEvent(
                       player,
-                      activeEventId
+                      activeEvent.id
                     )
                   }
                 >
@@ -6230,29 +5998,16 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="🔥 KARİYER MAÇI"
-          subtitle={`Aşama ${game.activeStage} • Maç ${game.career.match}/10`}
           backTo="match-menu"
         />
 
-        <InfoBox>
-          Her galibiyette rakip
-          kartlardan birini
-          kazanırsın.
-        </InfoBox>
-
         <div className="panel">
           <p>
-            Kullanım sınırı
-          </p>
-
-          <div className="big-number">
-            {stageCap} GEN
-          </div>
-
-          <p>
-            Kariyere girmek için en
-            az 11 aktif oyuncu
-            gerekir.
+            Aşama{" "}
+            {game.activeStage}
+            {" • Maç "}
+            {game.career.match}
+            /10
           </p>
 
           <button
@@ -6264,7 +6019,7 @@ function App() {
               )
             }
           >
-            🔥 MAÇA GİR
+            MAÇA GİR
           </button>
         </div>
       </div>
@@ -6275,34 +6030,6 @@ function App() {
     if (!battle) {
       return null;
     }
-
-    const currentGroup =
-      battle.groupOrder[
-        Math.min(
-          battle.round,
-          battle.groupOrder
-            .length - 1
-        )
-      ];
-
-    const available =
-      battle.playerDeck.filter(
-        (player) => {
-          const group =
-            player.positionGroup ||
-            getPositionGroup(
-              player.position
-            );
-
-          return (
-            group ===
-              currentGroup &&
-            !battle.usedPlayerIds.includes(
-              player.id
-            )
-          );
-        }
-      );
 
     if (
       battle.phase ===
@@ -6316,9 +6043,27 @@ function App() {
             🎁 KARTINI SEÇ
           </h1>
 
-          <p className="section-subtitle">
-            Bir kart seç.
-          </p>
+          {battle.rewardContext
+            ?.eventCurrencyReward && (
+            <div className="event-money">
+              {
+                battle
+                  .rewardContext
+                  .eventCurrencyIcon
+              }{" "}
+              +
+              {
+                battle
+                  .rewardContext
+                  .eventCurrencyReward
+              }{" "}
+              {
+                battle
+                  .rewardContext
+                  .eventCurrencyName
+              }
+            </div>
+          )}
 
           <div className="reward-grid">
             {battle.rewardChoices.map(
@@ -6350,13 +6095,9 @@ function App() {
     ) {
       return (
         <div className="page-card">
-          <h1 className="section-title">
+          <h1>
             KARİYER CEZASI
           </h1>
-
-          <p className="section-subtitle">
-            Kaybedeceğin kartı seç.
-          </p>
 
           <div className="player-grid">
             {battle.lossCandidates.map(
@@ -6390,7 +6131,7 @@ function App() {
 
       return (
         <div className="page-card">
-          <h1 className="section-title">
+          <h1>
             {result?.type ===
             "win"
               ? "🏆 GALİBİYET"
@@ -6400,13 +6141,18 @@ function App() {
                 : "❌ MAĞLUBİYET"}
           </h1>
 
-          {result?.type ===
-            "draw" && (
-            <div className="notice">
-              Beraberlikte kart
-              kaybı yok. Yarım
-              ödül: 🪙{" "}
-              {result.coinReward}
+          {result?.eventCurrencyReward && (
+            <div className="event-money">
+              {
+                result.eventCurrencyIcon
+              }{" "}
+              +
+              {
+                result.eventCurrencyReward
+              }{" "}
+              {
+                result.eventCurrencyName
+              }
             </div>
           )}
 
@@ -6441,6 +6187,21 @@ function App() {
         </div>
       );
     }
+
+    const currentGroup =
+      battle.groupOrder[
+        Math.min(
+          battle.round,
+          4
+        )
+      ];
+
+    const available =
+      getAvailablePlayersForRound(
+        battle.playerDeck,
+        currentGroup,
+        battle.usedPlayerIds
+      );
 
     return (
       <div className="page-card">
@@ -6482,47 +6243,66 @@ function App() {
           </div>
         </div>
 
+        <div className="round-plan">
+          {battle.groupOrder.map(
+            (group, index) => (
+              <div
+                key={`${group}-${index}`}
+                className={`round-chip ${
+                  index ===
+                  battle.round
+                    ? "active"
+                    : index <
+                        battle.round
+                      ? "done"
+                      : ""
+                }`}
+              >
+                {index + 1}.{" "}
+                {getRoundLabel(
+                  group
+                )}
+              </div>
+            )
+          )}
+        </div>
+
         {battle.phase ===
           "playing" && (
           <>
             <div className="battle-group">
               TUR{" "}
               {battle.round +
-                1}{" "}
-              •{" "}
-              {
-                positionGroups[
-                  currentGroup
-                ].name
-              }
+                1}
+              /5 —{" "}
+              {getRoundLabel(
+                currentGroup
+              )}
             </div>
 
             {battle.reveal && (
               <div className="notice">
-                Sen:{" "}
+                Önceki tur:{" "}
                 {
                   battle.reveal
                     .player.name
                 }{" "}
-                (
                 {
                   battle.reveal
                     .player
                     .overall
-                }
-                ) • Rakip:{" "}
+                }{" "}
+                GEN • Rakip{" "}
                 {
                   battle.reveal
-                    .opponent
-                    .name
+                    .opponent.name
                 }{" "}
-                (
                 {
                   battle.reveal
                     .opponent
                     .overall
-                }
-                )
+                }{" "}
+                GEN
               </div>
             )}
 
@@ -6550,15 +6330,21 @@ function App() {
 
         {battle.phase ===
           "result-ready" && (
-          <button
-            type="button"
-            className="primary-button"
-            onClick={
-              settleBattle
-            }
-          >
-            SONUCU GÖR
-          </button>
+          <>
+            <div className="notice">
+              5 düello tamamlandı.
+            </div>
+
+            <button
+              type="button"
+              className="primary-button"
+              onClick={
+                settleBattle
+              }
+            >
+              MAÇ SONUCUNU GÖR
+            </button>
+          </>
         )}
       </div>
     );
@@ -6569,9 +6355,6 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="PROFİL"
-          subtitle={
-            game.clubName
-          }
         />
 
         <div className="profile-stat-grid">
@@ -6594,38 +6377,10 @@ function App() {
             </span>
 
             <strong>
-              {game.activeStage} /
-              10
-            </strong>
-          </div>
-
-          <div className="profile-stat">
-            <span>
-              AKTİF OYUNCU
-            </span>
-
-            <strong>
-              {ownedPlayers.length}
-            </strong>
-          </div>
-
-          <div className="profile-stat">
-            <span>
-              KARİYER GALİBİYETİ
-            </span>
-
-            <strong>
-              {
-                game.career
-                  .totalWins
-              }
+              {game.activeStage}/10
             </strong>
           </div>
         </div>
-
-        <h2>
-          Ayarlar
-        </h2>
 
         <div className="panel">
           <div className="setting-row">
@@ -6653,26 +6408,19 @@ function App() {
           </div>
 
           {[
-            [
-              "daily",
-              "Günlük ödül",
-            ],
-            [
-              "training",
-              "Antrenman",
-            ],
-            [
-              "rental",
-              "Kiralama",
-            ],
+            "daily",
+            "training",
+            "rental",
           ].map(
-            ([key, label]) => (
+            (key) => (
               <div
                 className="setting-row"
-                key={key}
+                key={
+                  key
+                }
               >
                 <strong>
-                  🔔 {label}
+                  🔔 {key}
                 </strong>
 
                 <button
@@ -6745,14 +6493,8 @@ function App() {
       <div className="page-card">
         <PageHeader
           title="MAĞAZA"
-          subtitle="Coin ve promosyonlar"
           backTo="shopping-menu"
         />
-
-        <div className="notice">
-          ⚠️ Şu anda test ödeme
-          modu aktiftir.
-        </div>
 
         <div className="shop-grid">
           {COIN_PACKAGES.map(
@@ -6788,39 +6530,28 @@ function App() {
           )}
         </div>
 
-        <h2>
-          Test Kuponu
-        </h2>
+        <input
+          className="text-input"
+          value={
+            couponInput
+          }
+          onChange={(event) =>
+            setCouponInput(
+              event.target.value
+            )
+          }
+          placeholder="Kupon"
+        />
 
-        <div className="panel">
-          <input
-            className="text-input"
-            placeholder="Kupon kodu"
-            value={
-              couponInput
-            }
-            onChange={(event) =>
-              setCouponInput(
-                event.target
-                  .value
-              )
-            }
-          />
-
-          <button
-            type="button"
-            className="secondary-button"
-            style={{
-              width: "100%",
-              marginTop: 8,
-            }}
-            onClick={
-              redeemCoupon
-            }
-          >
-            KODU KULLAN
-          </button>
-        </div>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={
+            redeemCoupon
+          }
+        >
+          KODU KULLAN
+        </button>
       </div>
     );
   }
@@ -6846,10 +6577,6 @@ function App() {
               SOCCER CARDS WAR
             </h1>
 
-            <p className="section-subtitle">
-              EL TURCO PRESENTS
-            </p>
-
             <button
               type="button"
               className="primary-button"
@@ -6872,29 +6599,9 @@ function App() {
       <div className="app-shell">
         <div className="setup-screen">
           <div className="setup-box page-card">
-            <img
-              className="intro-logo"
-              src={`${
-                import.meta.env
-                  .BASE_URL
-              }icons/icon.svg`}
-              alt="SCW"
-            />
-
             <h1>
               KULÜBÜNÜ KUR
             </h1>
-
-            <p className="section-subtitle">
-              2 Forvet •
-              3 Orta Saha •
-              4 Defans •
-              1 Kaleci
-            </p>
-
-            <label className="field-label">
-              Kulüp Adı
-            </label>
 
             <input
               className="text-input"
@@ -6912,10 +6619,6 @@ function App() {
             <button
               type="button"
               className="primary-button"
-              style={{
-                width: "100%",
-                marginTop: 12,
-              }}
               onClick={
                 createClub
               }
@@ -7027,8 +6730,7 @@ function App() {
         <div className="modal-backdrop">
           <div className="modal">
             <h2>
-              Oyuncu satın alınsın
-              mı?
+              Oyuncu satın alınsın mı?
             </h2>
 
             <PlayerCard
@@ -7036,21 +6738,6 @@ function App() {
                 purchaseModal.player
               }
             />
-
-            <p>
-              <strong>
-                {
-                  purchaseModal
-                    .player.name
-                }
-              </strong>
-              <br />
-              GEN{" "}
-              {
-                purchaseModal
-                  .player.overall
-              }
-            </p>
 
             <div className="action-row">
               <button
