@@ -1,7 +1,6 @@
 import {
   getPositionGroup,
   positionGroups,
-  randomBetween,
   randomItem,
   shuffle,
 } from "../data/players";
@@ -315,86 +314,124 @@ export function calculateAverageOverall(
 /* =========================================================
    KARİYER RAKİP HEDEF GEN
 
-   Maç ilerledikçe hafif yükselir.
-   Aşama sınırını ASLA geçmez.
+   Oyuncunun kadro ortalamasına bağlı değildir.
+   Sadece aşama + maç numarasına göre sabittir.
 ========================================================= */
 
 export function calculateCareerTargetOverall({
-  squadAverage = 10,
   stage = 1,
   match = 1,
   stageMin = 10,
   stageCap = 30,
 } = {}) {
-  const safeAverage =
-    Number(squadAverage) ||
-    10;
-
   const safeStage =
     Math.max(
       1,
-      Number(stage) || 1
+      Math.min(
+        10,
+        Number(stage) || 1
+      )
     );
 
   const safeMatch =
     Math.max(
       1,
-      Number(match) || 1
+      Math.min(
+        10,
+        Number(match) || 1
+      )
     );
+
+  const fixedRanges = {
+    1: {
+      min: 20,
+      max: 30,
+    },
+
+    2: {
+      min: 30,
+      max: 40,
+    },
+
+    3: {
+      min: 40,
+      max: 50,
+    },
+
+    4: {
+      min: 50,
+      max: 60,
+    },
+
+    5: {
+      min: 60,
+      max: 70,
+    },
+
+    6: {
+      min: 70,
+      max: 80,
+    },
+
+    7: {
+      min: 75,
+      max: 85,
+    },
+
+    8: {
+      min: 80,
+      max: 90,
+    },
+
+    9: {
+      min: 85,
+      max: 95,
+    },
+
+    10: {
+      min: 90,
+      max: 99,
+    },
+  };
+
+  const range =
+    fixedRanges[
+      safeStage
+    ];
 
   const minimum =
-    Number(stageMin) ||
-    10;
+    Math.max(
+      Number(stageMin) || 1,
+      range.min
+    );
 
   const maximum =
-    Number(stageCap) ||
-    30;
-
-  /*
-    Maç ilerledikçe:
-    yaklaşık +0 → +4 GEN
-
-    Aşama yükseldikçe
-    hafif zorluk artışı.
-  */
-
-  const matchProgress =
     Math.min(
-      4,
-      Math.floor(
-        (safeMatch - 1) /
-          2
-      )
+      Number(stageCap) || 99,
+      range.max
     );
 
-  const stagePressure =
-    Math.min(
-      2,
-      Math.floor(
-        (safeStage - 1) /
-          3
-      )
+  if (
+    maximum <= minimum
+  ) {
+    return Math.round(
+      maximum
     );
+  }
 
-  const variance =
-    randomBetween(
-      -1,
-      1
-    );
+  const progress =
+    (safeMatch - 1) / 9;
 
   const target =
-    Math.round(
-      safeAverage +
-        matchProgress +
-        stagePressure +
-        variance
-    );
+    minimum +
+    (maximum - minimum) *
+      progress;
 
   return Math.max(
     minimum,
     Math.min(
       maximum,
-      target
+      Math.round(target)
     )
   );
 }
@@ -458,8 +495,8 @@ export function calculateEventTargetOverall({
       progress;
 
   /*
-    Oyuncunun gücü de hesaba girer,
-    fakat event sınırı geçilmez.
+    Event tarafında oyuncunun gücü
+    hâlâ hesaba giriyor.
   */
 
   const mixed =
@@ -526,9 +563,6 @@ export function clampOpponentDeck(
 
 /* =========================================================
    MAÇ ÖNCESİ GÖSTERİM
-
-   ÖRNEK:
-   SEN 30 GEN ⚔️ ~33 GEN RAKİP
 ========================================================= */
 
 export function getCareerPreview({
@@ -545,7 +579,6 @@ export function getCareerPreview({
 
   const opponentAverage =
     calculateCareerTargetOverall({
-      squadAverage,
       stage,
       match,
       stageMin,
@@ -573,8 +606,6 @@ export function getCareerPreview({
 
 /* =========================================================
    ANİMASYON AŞAMALARI
-
-   App.jsx tarafında kullanacağız.
 
    choosing
    collapsing

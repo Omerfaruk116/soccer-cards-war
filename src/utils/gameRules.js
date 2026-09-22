@@ -377,7 +377,7 @@ function addFormationId(
 export function getActiveFormationIds(
   game = {}
 ) {
-  const ids = [];
+  const formationIds = [];
 
   const formation =
     game.formation ||
@@ -402,19 +402,45 @@ export function getActiveFormationIds(
           value.forEach(
             (item) =>
               addFormationId(
-                ids,
+                formationIds,
                 item
               )
           );
         } else {
           addFormationId(
-            ids,
+            formationIds,
             value
           );
         }
       }
     );
   }
+
+  const uniqueFormationIds = [
+    ...new Set(
+      formationIds
+    ),
+  ].slice(
+    0,
+    squadRequirements.total
+  );
+
+  /*
+    Formation doluysa aktif kadronun
+    tek kaynağı odur. Böylece eski/stale
+    squad listesi yanlış oyuncuları kilitlemez.
+
+    Formation henüz hiç oluşturulmamış
+    eski save'lerde squad fallback olarak
+    kullanılmaya devam eder.
+  */
+  if (
+    uniqueFormationIds.length > 0
+  ) {
+    return uniqueFormationIds;
+  }
+
+  const fallbackIds = [];
 
   [
     game.squad,
@@ -434,7 +460,7 @@ export function getActiveFormationIds(
         list.forEach(
           (item) =>
             addFormationId(
-              ids,
+              fallbackIds,
               item
             )
         );
@@ -443,7 +469,9 @@ export function getActiveFormationIds(
   );
 
   return [
-    ...new Set(ids),
+    ...new Set(
+      fallbackIds
+    ),
   ].slice(
     0,
     squadRequirements.total
@@ -902,6 +930,25 @@ export function canRentPlayer(
       allowed: false,
       message:
         "Oyuncu bulunamadı.",
+    };
+  }
+
+  if (player.sold) {
+    return {
+      allowed: false,
+      message:
+        "Bu oyuncu satılmış.",
+    };
+  }
+
+  if (
+    !game?.rentalCenter
+      ?.unlocked
+  ) {
+    return {
+      allowed: false,
+      message:
+        "Önce kiralama merkezini aç.",
     };
   }
 
