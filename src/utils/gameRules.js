@@ -11,6 +11,34 @@ export const EVENT_MATCH_COOLDOWN_MS = 0;
 
 const DEFAULT_STAGE_CAP = 99;
 
+export function getStageCap(stage) {
+  const safeStage = Math.min(
+    10,
+    Math.max(
+      1,
+      Number(stage) || 1
+    )
+  );
+
+  const stageCaps = {
+    1: 25,
+    2: 35,
+    3: 45,
+    4: 55,
+    5: 65,
+    6: 75,
+    7: 80,
+    8: 85,
+    9: 90,
+    10: 99,
+  };
+
+  return (
+    stageCaps[safeStage] ??
+    DEFAULT_STAGE_CAP
+  );
+}
+
 /* =========================================================
    GENEL YARDIMCILAR
 ========================================================= */
