@@ -1,3 +1,5 @@
+import PlayerAvatar from "./PlayerAvatar";
+
 import {
   getCountry,
   getPositionGroup,
@@ -178,12 +180,23 @@ function PlayerCard({
   const cardHeight =
     compact ? 178 : 226;
 
+  const avatarSize =
+    compact ? 67 : 84;
+
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`player-card rarity-${rarity} ${compact ? "player-card-compact" : ""} ${selected ? "player-card-selected" : ""} ${className}`}
+      className={`player-card rarity-${rarity} ${
+        compact
+          ? "player-card-compact"
+          : ""
+      } ${
+        selected
+          ? "player-card-selected"
+          : ""
+      } ${className}`}
       style={{
         position: "relative",
         display: "block",
@@ -192,10 +205,10 @@ function PlayerCard({
         height: cardHeight,
         padding: 0,
         overflow: "hidden",
-        borderRadius: compact
-          ? 15
-          : 18,
-        border: `2px solid ${theme.border}`,
+        borderRadius:
+          compact ? 15 : 18,
+        border:
+          `2px solid ${theme.border}`,
         background:
           theme.background,
         boxShadow: selected
@@ -221,7 +234,8 @@ function PlayerCard({
         ...style,
       }}
     >
-      {/* Parlama katmanı */}
+      {/* PARLAMA */}
+
       <div
         style={{
           position: "absolute",
@@ -233,7 +247,8 @@ function PlayerCard({
         }}
       />
 
-      {/* Üst dekor */}
+      {/* ÜST DEKOR */}
+
       <div
         style={{
           position: "absolute",
@@ -244,7 +259,8 @@ function PlayerCard({
           transform:
             "translateX(-50%)",
           borderRadius: "50%",
-          border: `1px solid ${theme.ring}`,
+          border:
+            `1px solid ${theme.ring}`,
           opacity: 0.22,
           pointerEvents: "none",
         }}
@@ -257,12 +273,15 @@ function PlayerCard({
           height: "100%",
           display: "flex",
           flexDirection: "column",
-          padding: compact
-            ? "10px"
-            : "12px",
+          padding:
+            compact
+              ? "10px"
+              : "12px",
+          boxSizing: "border-box",
         }}
       >
         {/* ÜST SATIR */}
+
         <div
           style={{
             display: "flex",
@@ -276,9 +295,10 @@ function PlayerCard({
           <div>
             <div
               style={{
-                fontSize: compact
-                  ? 8
-                  : 9,
+                fontSize:
+                  compact
+                    ? 8
+                    : 9,
                 fontWeight: 900,
                 letterSpacing:
                   "1.15px",
@@ -286,7 +306,7 @@ function PlayerCard({
                   theme.accent,
                 textShadow:
                   rarity ===
-                    "icon"
+                  "icon"
                     ? "none"
                     : "0 1px 5px rgba(0,0,0,.55)",
               }}
@@ -322,9 +342,10 @@ function PlayerCard({
                 "rgba(0,0,0,.24)",
               border:
                 "1px solid rgba(255,255,255,.13)",
-              fontSize: compact
-                ? 11
-                : 13,
+              fontSize:
+                compact
+                  ? 11
+                  : 13,
             }}
           >
             <span>
@@ -334,98 +355,179 @@ function PlayerCard({
           </div>
         </div>
 
-        {/* GEN DAİRESİ */}
+        {/* =================================================
+            SCW FUTBOLCU PORTRESİ
+        ================================================== */}
+
         <div
           style={{
             display: "flex",
             justifyContent:
               "center",
-            alignItems: "center",
+            alignItems:
+              "center",
             flex: 1,
             minHeight: 0,
+            position: "relative",
           }}
         >
           <div
             style={{
-              width: compact
-                ? 67
-                : 84,
-              height: compact
-                ? 67
-                : 84,
-              borderRadius: "50%",
-              display: "flex",
-              flexDirection:
-                "column",
-              alignItems: "center",
-              justifyContent:
-                "center",
-              border: `3px solid ${theme.ring}`,
-              background:
-                rarity === "icon"
-                  ? "rgba(255,255,255,.34)"
-                  : "rgba(0,0,0,.28)",
-              boxShadow: `inset 0 0 16px rgba(0,0,0,.27), 0 0 13px ${theme.ring}55`,
+              position: "relative",
+              width:
+                avatarSize,
+              height:
+                avatarSize,
+              flex:
+                "0 0 auto",
             }}
           >
-            <strong
-              style={{
-                lineHeight: 1,
-                fontSize: compact
-                  ? 27
-                  : 34,
-                fontWeight: 1000,
-                letterSpacing:
-                  "-1.5px",
-                color:
-                  theme.text,
-                textShadow:
-                  rarity === "icon"
-                    ? "0 1px 1px rgba(255,255,255,.5)"
-                    : "0 2px 8px rgba(0,0,0,.55)",
-              }}
-            >
-              {player.overall}
-            </strong>
+            <PlayerAvatar
+              player={player}
+              size={avatarSize}
+            />
 
-            <span
+            {/* GEN ROZETİ */}
+
+            <div
               style={{
-                marginTop: 3,
-                fontSize: 8,
-                fontWeight: 900,
-                letterSpacing:
-                  "1px",
+                position:
+                  "absolute",
+
+                right:
+                  compact
+                    ? -8
+                    : -10,
+
+                bottom:
+                  compact
+                    ? -4
+                    : -5,
+
+                zIndex: 60,
+
+                display:
+                  "flex",
+
+                flexDirection:
+                  "column",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
+
+                width:
+                  compact
+                    ? 31
+                    : 38,
+
+                height:
+                  compact
+                    ? 31
+                    : 38,
+
+                borderRadius:
+                  "50%",
+
+                border:
+                  `2px solid ${theme.ring}`,
+
+                background:
+                  rarity ===
+                  "icon"
+                    ? "#efe3b7"
+                    : "rgba(5,8,11,.94)",
+
+                boxShadow:
+                  `0 0 11px ${theme.ring}88`,
+
                 color:
-                  theme.accent,
+                  rarity ===
+                  "icon"
+                    ? "#302819"
+                    : theme.text,
               }}
             >
-              GEN
-            </span>
+              <strong
+                style={{
+                  lineHeight: 1,
+
+                  fontSize:
+                    compact
+                      ? 13
+                      : 16,
+
+                  fontWeight:
+                    1000,
+
+                  letterSpacing:
+                    "-.6px",
+                }}
+              >
+                {player.overall}
+              </strong>
+
+              <span
+                style={{
+                  marginTop: 1,
+
+                  fontSize:
+                    compact
+                      ? 4.5
+                      : 5.5,
+
+                  lineHeight: 1,
+
+                  fontWeight:
+                    1000,
+
+                  letterSpacing:
+                    ".5px",
+
+                  color:
+                    theme.accent,
+                }}
+              >
+                GEN
+              </span>
+            </div>
           </div>
         </div>
 
         {/* OYUNCU BİLGİSİ */}
+
         <div
           style={{
             borderTop:
               "1px solid rgba(255,255,255,.13)",
-            paddingTop: compact
-              ? 7
-              : 9,
+            paddingTop:
+              compact
+                ? 7
+                : 9,
           }}
         >
           <div
             style={{
-              fontSize: compact
-                ? 12
-                : 14,
+              fontSize:
+                compact
+                  ? 12
+                  : 14,
+
               lineHeight: 1.1,
+
               fontWeight: 950,
+
               whiteSpace:
                 "nowrap",
-              overflow: "hidden",
+
+              overflow:
+                "hidden",
+
               textOverflow:
                 "ellipsis",
+
               color:
                 theme.text,
             }}
@@ -436,15 +538,24 @@ function PlayerCard({
           <div
             style={{
               display: "flex",
+
               justifyContent:
                 "space-between",
-              alignItems: "center",
+
+              alignItems:
+                "center",
+
               gap: 6,
+
               marginTop: 6,
-              fontSize: compact
-                ? 8
-                : 9,
+
+              fontSize:
+                compact
+                  ? 8
+                  : 9,
+
               fontWeight: 900,
+
               letterSpacing:
                 ".6px",
             }}
@@ -453,11 +564,15 @@ function PlayerCard({
               style={{
                 padding:
                   "3px 6px",
+
                 borderRadius: 6,
+
                 background:
                   "rgba(0,0,0,.25)",
+
                 border:
                   "1px solid rgba(255,255,255,.12)",
+
                 color:
                   theme.accent,
               }}
@@ -485,8 +600,12 @@ function PlayerCard({
               <div
                 style={{
                   marginTop: 6,
+
                   fontSize: 10,
-                  fontWeight: 900,
+
+                  fontWeight:
+                    900,
+
                   color:
                     theme.accent,
                 }}
@@ -502,21 +621,31 @@ function PlayerCard({
             <div
               style={{
                 marginTop: 6,
+
                 padding:
                   "4px 6px",
+
                 borderRadius: 7,
+
                 textAlign:
                   "center",
+
                 fontSize: 8,
-                fontWeight: 950,
+
+                fontWeight:
+                  950,
+
                 letterSpacing:
                   ".5px",
+
                 background:
                   isSold
                     ? "rgba(70,70,70,.85)"
                     : "rgba(0,0,0,.46)",
+
                 border:
                   "1px solid rgba(255,255,255,.12)",
+
                 color:
                   isSold
                     ? "#d1d1d1"
@@ -540,20 +669,26 @@ function PlayerCard({
       </div>
 
       {/* EL TURCO ALT ŞERİDİ */}
+
       {rarity ===
         "elturco" && (
         <div
           style={{
             position:
               "absolute",
+
             left: 0,
             right: 0,
             bottom: 0,
+
             height: 3,
+
             background:
               "linear-gradient(90deg,#b5160c,#ffd84d,#ff4b20,#ffd84d,#b5160c)",
+
             boxShadow:
               "0 0 9px #ff6a1f",
+
             zIndex: 4,
           }}
         />

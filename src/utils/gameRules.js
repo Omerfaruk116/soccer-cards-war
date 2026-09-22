@@ -1,704 +1,345 @@
-import {
-  calculateFullTrainingPlan,
-  careerLeagues,
-  eventConfigs,
-  getPositionGroup,
-  positionGroups,
-  squadRequirements,
-} from "../data/players";
-
-export const EVENT_MATCH_COOLDOWN_MS =
-  30 * 1000;
-
-export const DAILY_REWARD_COOLDOWN_MS =
-  24 * 60 * 60 * 1000;
-
-export const MAX_NORMAL_OVERALL = 99;
-
-export const EL_TURCO_OVERALL = 100;
-
 /* =========================================================
-   AŞAMA SINIRLARI
+   SOCCER CARDS WAR
+   GAME RULES
 ========================================================= */
 
-export function getStageCap(
-  stageNumber = 1
-) {
-  const stage = Math.min(
-    10,
-    Math.max(
-      1,
-      Number(stageNumber) || 1
-    )
-  );
+/* =========================================================
+   SABİTLER
+========================================================= */
 
-  const league =
-    careerLeagues.find(
-      (item) =>
-        Number(item.stage) ===
-        stage
-    );
+export const EVENT_MATCH_COOLDOWN_MS = 0;
 
-  return Number(
-    league?.playCap ||
-      league?.max ||
-      30
-  );
+const DEFAULT_STAGE_CAP = 99;
+
+/* =========================================================
+   GENEL YARDIMCILAR
+========================================================= */
+
+function safeArray(value) {
+  return Array.isArray(value)
+    ? value
+    : [];
 }
 
-export function getEventStageCap(
-  eventId
+function safeNumber(
+  value,
+  fallback = 0
 ) {
-  const event =
-    eventConfigs.find(
-      (item) =>
-        item.id === eventId
-    ) ||
-    eventConfigs[0];
+  const number =
+    Number(value);
 
-  return Number(
-    event?.playCap ||
-      event?.max ||
-      30
-  );
+  return Number.isFinite(number)
+    ? number
+    : fallback;
+}
+
+function getPlayerId(player) {
+  return player?.id ?? null;
 }
 
 /* =========================================================
-   OYUNCU DURUMLARI
+   AKTİF FORMASYON
 ========================================================= */
-
-export function isPlayerSold(player) {
-  return Boolean(
-    player?.sold
-  );
-}
-
-export function isPlayerTraining(
-  player,
-  game
-) {
-  if (!player || !game) {
-    return false;
-  }
-
-  if (
-    game.training
-      ?.playerId ===
-    player.id
-  ) {
-    return true;
-  }
-
-  if (
-    Number(
-      player.trainingUntil ||
-        0
-    ) > Date.now()
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-export function isPlayerRented(
-  player,
-  game
-) {
-  if (!player || !game) {
-    return false;
-  }
-
-  if (
-    Number(
-      player.rentedUntil ||
-        0
-    ) > Date.now()
-  ) {
-    return true;
-  }
-
-  return Boolean(
-    game.rentalCenter
-      ?.rentals
-      ?.some(
-        (rental) =>
-          rental.playerId ===
-            player.id &&
-          !rental.finished &&
-          rental.endsAt >
-            Date.now()
-      )
-  );
-}
-
-export function isPlayerWithCoach(
-  player,
-  game
-) {
-  if (!player || !game) {
-    return false;
-  }
-
-  return Boolean(
-    game.coaches
-      ?.activeSessions
-      ?.some(
-        (session) =>
-          session.playerIds
-            ?.includes(
-              player.id
-            ) &&
-          session.endsAt >
-            Date.now()
-      )
-  );
-}
-
-export function isPlayerBusy(
-  player,
-  game
-) {
-  return (
-    isPlayerTraining(
-      player,
-      game
-    ) ||
-    isPlayerRented(
-      player,
-      game
-    ) ||
-    isPlayerWithCoach(
-      player,
-      game
-    )
-  );
-}
-
-export function isPlayerUsable(
-  player,
-  game,
-  stageCap = 99
-) {
-  if (!player) {
-    return false;
-  }
-
-  if (player.sold) {
-    return false;
-  }
-
-  if (
-    player.overall >
-      stageCap &&
-    player.overall !== 100
-  ) {
-    return false;
-  }
-
-  if (
-    isPlayerBusy(
-      player,
-      game
-    )
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-/* =========================================================
-   AKTİF OYUNCULAR
-========================================================= */
-
-export function getActivePlayers(
-  game,
-  stageCap = 99
-) {
-  if (
-    !Array.isArray(
-      game?.collection
-    )
-  ) {
-    return [];
-  }
-
-  return game.collection.filter(
-    (player) =>
-      isPlayerUsable(
-        player,
-        game,
-        stageCap
-      )
-  );
-}
-
-/* =========================================================
-   POZİSYON SAYILARI
-========================================================= */
-
-export function countGroups(
-  players = []
-) {
-  const counts = {
-    goalkeeper: 0,
-    defense: 0,
-    midfield: 0,
-    forward: 0,
-    total: 0,
-  };
-
-  players.forEach(
-    (player) => {
-      if (
-        !player ||
-        player.sold
-      ) {
-        return;
-      }
-
-      const group =
-        player.positionGroup ||
-        getPositionGroup(
-          player.position
-        );
-
-      if (
-        counts[group] !==
-        undefined
-      ) {
-        counts[group] += 1;
-      }
-
-      counts.total += 1;
-    }
-  );
-
-  return counts;
-}
-
-export function getSquadProblems(
-  players = []
-) {
-  const counts =
-    countGroups(players);
-
-  const problems = [];
-
-  Object.entries(
-    squadRequirements
-  ).forEach(
-    ([group, minimum]) => {
-      if (
-        group === "total" ||
-        group ===
-          "careerMinimumActivePlayers"
-      ) {
-        return;
-      }
-
-      if (
-        counts[group] <
-        minimum
-      ) {
-        problems.push({
-          group,
-
-          name:
-            positionGroups[
-              group
-            ]?.name ||
-            group,
-
-          current:
-            counts[group],
-
-          required:
-            minimum,
-        });
-      }
-    }
-  );
-
-  if (
-    counts.total <
-    squadRequirements.total
-  ) {
-    problems.push({
-      group: "total",
-      name: "TOPLAM",
-      current:
-        counts.total,
-      required:
-        squadRequirements.total,
-    });
-  }
-
-  return {
-    valid:
-      problems.length === 0,
-    counts,
-    problems,
-  };
-}
-
-/* =========================================================
-   AKTİF 10 KİŞİLİK KADRO
-========================================================= */
-
-function addFormationId(
-  target,
-  value
-) {
-  if (!value) {
-    return;
-  }
-
-  if (
-    typeof value ===
-    "string"
-  ) {
-    target.push(value);
-    return;
-  }
-
-  if (
-    typeof value ===
-      "object" &&
-    value.id
-  ) {
-    target.push(
-      value.id
-    );
-  }
-}
 
 export function getActiveFormationIds(
-  game = {}
+  game
 ) {
-  const formationIds = [];
-
   const formation =
-    game.formation ||
-    game.team?.formation ||
-    game.activeFormation ||
-    {};
+    game?.formation || {};
 
-  if (
-    formation &&
-    typeof formation ===
-      "object"
-  ) {
-    Object.values(
-      formation
-    ).forEach(
-      (value) => {
+  const formationIds =
+    Object.values(formation)
+      .map((value) => {
         if (
-          Array.isArray(
-            value
-          )
+          value &&
+          typeof value === "object"
         ) {
-          value.forEach(
-            (item) =>
-              addFormationId(
-                formationIds,
-                item
-              )
-          );
-        } else {
-          addFormationId(
-            formationIds,
-            value
-          );
+          return value.id;
         }
-      }
-    );
-  }
 
-  const uniqueFormationIds = [
-    ...new Set(
-      formationIds
-    ),
-  ].slice(
-    0,
-    squadRequirements.total
-  );
+        return value;
+      })
+      .filter(Boolean);
 
   /*
-    Formation doluysa aktif kadronun
-    tek kaynağı odur. Böylece eski/stale
-    squad listesi yanlış oyuncuları kilitlemez.
-
-    Formation henüz hiç oluşturulmamış
-    eski save'lerde squad fallback olarak
-    kullanılmaya devam eder.
+    Formation doluysa ana kaynak odur.
+    Böylece eski squad verileri oyuncuları
+    yanlışlıkla kilitlemez.
   */
-  if (
-    uniqueFormationIds.length > 0
-  ) {
-    return uniqueFormationIds;
+  if (formationIds.length) {
+    return [
+      ...new Set(
+        formationIds
+      ),
+    ];
   }
 
-  const fallbackIds = [];
+  const fallbackIds = [
+    ...safeArray(
+      game?.squadIds
+    ),
 
-  [
-    game.squad,
-    game.activeSquad,
-    game.lineup,
-    game.startingPlayers,
-    game.startingXI,
-    game.team?.squad,
-    game.team?.startingXI,
-  ].forEach(
-    (list) => {
-      if (
-        Array.isArray(
-          list
-        )
-      ) {
-        list.forEach(
-          (item) =>
-            addFormationId(
-              fallbackIds,
-              item
-            )
-        );
-      }
-    }
-  );
+    ...safeArray(
+      game?.squad
+    ).map((player) =>
+      typeof player === "object"
+        ? player?.id
+        : player
+    ),
+
+    ...safeArray(
+      game?.lineup
+    ).map((player) =>
+      typeof player === "object"
+        ? player?.id
+        : player
+    ),
+  ].filter(Boolean);
 
   return [
     ...new Set(
       fallbackIds
     ),
-  ].slice(
-    0,
-    squadRequirements.total
-  );
+  ];
 }
 
 export function isPlayerInActiveFormation(
   player,
   game
 ) {
+  const playerId =
+    getPlayerId(player);
+
+  if (!playerId) {
+    return false;
+  }
+
+  return getActiveFormationIds(
+    game
+  ).includes(playerId);
+}
+
+/* =========================================================
+   ANTRENMANLAR
+========================================================= */
+
+/*
+  Eski save:
+  training: null
+  training: { ... }
+
+  Yeni save:
+  training: [ ... ]
+
+  Hepsini destekler.
+*/
+export function getTrainingSessions(
+  game
+) {
+  const training =
+    game?.training;
+
+  if (
+    Array.isArray(training)
+  ) {
+    return training.filter(
+      Boolean
+    );
+  }
+
+  if (
+    training &&
+    typeof training === "object"
+  ) {
+    return [training];
+  }
+
+  /*
+    İleride trainingSessions adı
+    kullanılmış save varsa onu da oku.
+  */
+  if (
+    Array.isArray(
+      game?.trainingSessions
+    )
+  ) {
+    return game.trainingSessions.filter(
+      Boolean
+    );
+  }
+
+  return [];
+}
+
+export function isPlayerTraining(
+  player,
+  game
+) {
+  const playerId =
+    getPlayerId(player);
+
+  if (!playerId) {
+    return false;
+  }
+
+  return getTrainingSessions(
+    game
+  ).some(
+    (session) =>
+      session?.playerId ===
+        playerId &&
+      !session?.finished
+  );
+}
+
+/* =========================================================
+   ANTRENÖR SEANSLARI
+========================================================= */
+
+export function getCoachSessions(
+  game
+) {
+  return safeArray(
+    game?.coaches
+      ?.activeSessions
+  ).filter(Boolean);
+}
+
+export function isPlayerWithCoach(
+  player,
+  game
+) {
+  const playerId =
+    getPlayerId(player);
+
+  if (!playerId) {
+    return false;
+  }
+
+  return getCoachSessions(
+    game
+  ).some(
+    (session) =>
+      !session?.finished &&
+      safeArray(
+        session?.playerIds
+      ).includes(playerId)
+  );
+}
+
+/* =========================================================
+   KİRALIK OYUNCULAR
+========================================================= */
+
+export function getActiveRentals(
+  game,
+  now = Date.now()
+) {
+  return safeArray(
+    game?.rentalCenter
+      ?.rentals
+  ).filter(
+    (rental) =>
+      rental &&
+      !rental.finished &&
+      safeNumber(
+        rental.endsAt
+      ) > now
+  );
+}
+
+export function isPlayerRented(
+  player,
+  game
+) {
+  const playerId =
+    getPlayerId(player);
+
+  if (!playerId) {
+    return false;
+  }
+
+  return safeArray(
+    game?.rentalCenter
+      ?.rentals
+  ).some(
+    (rental) =>
+      rental?.playerId ===
+        playerId &&
+      !rental?.finished
+  );
+}
+
+/* =========================================================
+   OYUNCU MEŞGUL MÜ?
+========================================================= */
+
+export function isPlayerBusy(
+  player,
+  game
+) {
   if (!player) {
     return false;
   }
 
-  const playerId =
-    typeof player ===
-    "string"
-      ? player
-      : player.id;
-
-  return getActiveFormationIds(
-    game
-  ).includes(
-    playerId
-  );
-}
-
-export function getActiveFormationPlayers(
-  players = [],
-  game = {}
-) {
-  const ids =
-    getActiveFormationIds(
-      game
-    );
-
-  return ids
-    .map((id) =>
-      players.find(
-        (player) =>
-          player.id === id
-      )
-    )
-    .filter(Boolean);
-}
-
-/* =========================================================
-   KADRO ORTALAMASI
-========================================================= */
-
-export function getSquadAverage(
-  players = [],
-  game = {}
-) {
-  const squad =
-    getActiveFormationPlayers(
-      players,
-      game
-    );
-
-  if (!squad.length) {
-    return 0;
-  }
-
-  const total =
-    squad.reduce(
-      (sum, player) =>
-        sum +
-        Number(
-          player.overall ||
-            0
-        ),
-      0
-    );
-
   return (
-    Math.round(
-      (total /
-        squad.length) *
-        10
-    ) / 10
+    isPlayerTraining(
+      player,
+      game
+    ) ||
+    isPlayerWithCoach(
+      player,
+      game
+    ) ||
+    isPlayerRented(
+      player,
+      game
+    )
   );
 }
 
 /* =========================================================
-   MAÇ BAŞLATMA
-========================================================= */
-
-export function canStartCareer(
-  game,
-  stageCap = 99
-) {
-  const active =
-    getActivePlayers(
-      game,
-      stageCap
-    );
-
-  const formation =
-    getSquadProblems(
-      active
-    );
-
-  if (
-    active.length <
-    squadRequirements
-      .careerMinimumActivePlayers
-  ) {
-    return {
-      allowed: false,
-
-      message:
-        `Kariyer maçına girmek için en az ${squadRequirements.careerMinimumActivePlayers} aktif oyuncuya ihtiyacın var.`,
-
-      activePlayers:
-        active.length,
-
-      formation,
-    };
-  }
-
-  if (!formation.valid) {
-    const first =
-      formation.problems[0];
-
-    return {
-      allowed: false,
-
-      message:
-        first?.group ===
-        "total"
-          ? "Maç oynayabilmek için en az 10 kullanılabilir oyuncuya ihtiyacın var."
-          : `Kadron eksik: En az ${first.required} ${first.name} oyuncusu gerekli.`,
-
-      activePlayers:
-        active.length,
-
-      formation,
-    };
-  }
-
-  return {
-    allowed: true,
-    message: "",
-    activePlayers:
-      active.length,
-    formation,
-  };
-}
-
-export function canStartEvent(
-  game,
-  stageCap = 99
-) {
-  const active =
-    getActivePlayers(
-      game,
-      stageCap
-    );
-
-  const formation =
-    getSquadProblems(
-      active
-    );
-
-  if (!formation.valid) {
-    const first =
-      formation.problems[0];
-
-    return {
-      allowed: false,
-
-      message:
-        first?.group ===
-        "total"
-          ? "Etkinlik maçına girmek için 10 kullanılabilir oyuncu gerekli."
-          : `Kadron eksik: En az ${first.required} ${first.name} oyuncusu gerekli.`,
-
-      formation,
-    };
-  }
-
-  return {
-    allowed: true,
-    message: "",
-    formation,
-  };
-}
-
-/* =========================================================
-   OYUNCUYU GEÇİCİ KULLANIMDAN ÇIKARMA KONTROLÜ
+   GEÇİCİ OLARAK TAKIMDAN ÇIKARILABİLİR Mİ?
 ========================================================= */
 
 export function canTemporarilyRemovePlayer(
   game,
   playerId
 ) {
-  const active =
-    getActivePlayers(
-      game,
-      100
-    );
-
-  const remaining =
-    active.filter(
+  const collection =
+    safeArray(
+      game?.collection
+    ).filter(
       (player) =>
-        player.id !==
+        player &&
+        !player.sold
+    );
+
+  const available =
+    collection.filter(
+      (player) =>
+        !isPlayerBusy(
+          player,
+          game
+        )
+    );
+
+  /*
+    Oyunda kullanılabilir oyuncu
+    kalmayacaksa izin verme.
+  */
+  if (
+    available.length <= 1 &&
+    available.some(
+      (player) =>
+        player.id ===
         playerId
-    );
-
-  const result =
-    getSquadProblems(
-      remaining
-    );
-
-  if (!result.valid) {
-    const first =
-      result.problems[0];
-
+    )
+  ) {
     return {
       allowed: false,
-
       message:
-        first?.group ===
-        "total"
-          ? "Bu işlemden sonra maç oynayacak yeterli oyuncun kalmıyor."
-          : `Bu oyuncuyu kullanımdan çıkaramazsın. En az ${first.required} ${first.name} oyuncusu aktif kalmalı.`,
+        "Takımında kullanılabilir oyuncu kalmaz.",
     };
   }
 
@@ -709,7 +350,7 @@ export function canTemporarilyRemovePlayer(
 }
 
 /* =========================================================
-   SATIŞ
+   SATIŞ KURALI
 ========================================================= */
 
 export function canSellPlayer(
@@ -726,241 +367,13 @@ export function canSellPlayer(
 
   if (
     player.unsellable ||
-    player.specialReward ||
     player.rarity ===
       "elturco"
   ) {
     return {
       allowed: false,
       message:
-        "Bu özel ödül kartı satılamaz.",
-    };
-  }
-
-  if (player.sold) {
-    return {
-      allowed: false,
-      message:
-        "Bu oyuncu zaten satılmış.",
-    };
-  }
-
-  if (
-    isPlayerInActiveFormation(
-      player,
-      game
-    )
-  ) {
-    return {
-      allowed: false,
-      message:
-        "🔒 OYUNCU ŞU AN KADRODA",
-    };
-  }
-
-  if (
-    isPlayerBusy(
-      player,
-      game
-    )
-  ) {
-    return {
-      allowed: false,
-      message:
-        "Bu oyuncu şu anda antrenmanda, antrenörde veya kiralıkta.",
-    };
-  }
-
-  return canTemporarilyRemovePlayer(
-    game,
-    player.id
-  );
-}
-
-/* =========================================================
-   ANTRENMAN
-========================================================= */
-
-export function canSendToTraining(
-  game,
-  player,
-  stageCap = 99
-) {
-  if (!player) {
-    return {
-      allowed: false,
-      message:
-        "Oyuncu bulunamadı.",
-    };
-  }
-
-  if (player.sold) {
-    return {
-      allowed: false,
-      message:
-        "Bu oyuncu satılmış.",
-    };
-  }
-
-  if (
-    player.overall >= 100
-  ) {
-    return {
-      allowed: false,
-      message:
-        "MAX GEN",
-    };
-  }
-
-  if (
-    player.overall >=
-    stageCap
-  ) {
-    return {
-      allowed: false,
-      message:
-        `AŞAMA SINIRI: ${stageCap} GEN`,
-    };
-  }
-
-  if (
-    isPlayerInActiveFormation(
-      player,
-      game
-    )
-  ) {
-    return {
-      allowed: false,
-      message:
-        "🔒 KADRODA",
-    };
-  }
-
-  if (
-    isPlayerBusy(
-      player,
-      game
-    )
-  ) {
-    return {
-      allowed: false,
-      message:
-        "Bu oyuncu zaten başka bir görevde.",
-    };
-  }
-
-  return canTemporarilyRemovePlayer(
-    game,
-    player.id
-  );
-}
-
-export function canSendToCoach(
-  game,
-  player,
-  stageCap = 99
-) {
-  return canSendToTraining(
-    game,
-    player,
-    stageCap
-  );
-}
-
-/* =========================================================
-   FULL ANTRENMAN
-========================================================= */
-
-export function getFullTrainingForPlayer(
-  game,
-  player,
-  stageCap = 99
-) {
-  const check =
-    canSendToTraining(
-      game,
-      player,
-      stageCap
-    );
-
-  if (!check.allowed) {
-    return {
-      allowed: false,
-      message:
-        check.message,
-      gain: 0,
-      hours: 0,
-      milliseconds: 0,
-      cost: 0,
-      targetOverall:
-        player?.overall ||
-        0,
-    };
-  }
-
-  const plan =
-    calculateFullTrainingPlan(
-      player.overall,
-      stageCap
-    );
-
-  return {
-    allowed:
-      plan.gain > 0,
-
-    message:
-      plan.gain > 0
-        ? ""
-        : "Oyuncu zaten maksimum seviyede.",
-
-    ...plan,
-  };
-}
-
-/* =========================================================
-   KİRALAMA
-========================================================= */
-
-export function canRentPlayer(
-  game,
-  player
-) {
-  if (!player) {
-    return {
-      allowed: false,
-      message:
-        "Oyuncu bulunamadı.",
-    };
-  }
-
-  if (player.sold) {
-    return {
-      allowed: false,
-      message:
-        "Bu oyuncu satılmış.",
-    };
-  }
-
-  if (
-    !game?.rentalCenter
-      ?.unlocked
-  ) {
-    return {
-      allowed: false,
-      message:
-        "Önce kiralama merkezini aç.",
-    };
-  }
-
-  if (
-    player.unsellable ||
-    player.rarity ===
-      "elturco"
-  ) {
-    return {
-      allowed: false,
-      message:
-        "EL TURCO kiraya verilemez.",
+        "Bu oyuncu satılamaz.",
     };
   }
 
@@ -990,6 +403,397 @@ export function canRentPlayer(
     };
   }
 
+  return {
+    allowed: true,
+    message: "",
+  };
+}
+
+/* =========================================================
+   ANTRENMANA GÖNDERME
+========================================================= */
+
+export function canSendToTraining(
+  game,
+  player,
+  stageCap = DEFAULT_STAGE_CAP
+) {
+  if (!player) {
+    return {
+      allowed: false,
+      message:
+        "Oyuncu bulunamadı.",
+    };
+  }
+
+  if (
+    isPlayerInActiveFormation(
+      player,
+      game
+    )
+  ) {
+    return {
+      allowed: false,
+      message:
+        "🔒 OYUNCU ŞU AN KADRODA",
+    };
+  }
+
+  if (
+    isPlayerBusy(
+      player,
+      game
+    )
+  ) {
+    return {
+      allowed: false,
+      message:
+        "Oyuncu zaten başka bir işlemde.",
+    };
+  }
+
+  const cap =
+    Math.max(
+      1,
+      safeNumber(
+        stageCap,
+        DEFAULT_STAGE_CAP
+      )
+    );
+
+  if (
+    safeNumber(
+      player.overall
+    ) >= cap
+  ) {
+    return {
+      allowed: false,
+      message:
+        "Oyuncu mevcut aşamanın GEN sınırında.",
+    };
+  }
+
+  const temporaryCheck =
+    canTemporarilyRemovePlayer(
+      game,
+      player.id
+    );
+
+  if (
+    !temporaryCheck.allowed
+  ) {
+    return temporaryCheck;
+  }
+
+  return {
+    allowed: true,
+    message: "",
+  };
+}
+
+/* =========================================================
+   ANTRENÖRE GÖNDERME
+========================================================= */
+
+export function canSendToCoach(
+  game,
+  player,
+  stageCap = DEFAULT_STAGE_CAP
+) {
+  return canSendToTraining(
+    game,
+    player,
+    stageCap
+  );
+}
+
+/* =========================================================
+   FULL ANTRENMAN
+========================================================= */
+
+function calculateFullTrainingPlan(
+  currentOverall,
+  stageCap
+) {
+  const current =
+    Math.max(
+      1,
+      safeNumber(
+        currentOverall,
+        1
+      )
+    );
+
+  const cap =
+    Math.max(
+      current,
+      safeNumber(
+        stageCap,
+        DEFAULT_STAGE_CAP
+      )
+    );
+
+  const gain =
+    Math.max(
+      0,
+      cap - current
+    );
+
+  if (!gain) {
+    return {
+      gain: 0,
+      hours: 0,
+      milliseconds: 0,
+      cost: 0,
+      targetOverall:
+        current,
+    };
+  }
+
+  /*
+    GEN farkına göre süre.
+    En az 1 saat,
+    en fazla 24 saat.
+  */
+  const hours =
+    Math.max(
+      1,
+      Math.min(
+        24,
+        Math.ceil(
+          gain * 1.5
+        )
+      )
+    );
+
+  /*
+    GEN yükseldikçe maliyet artar.
+  */
+  const cost =
+    Math.max(
+      100,
+      Math.round(
+        gain *
+          Math.max(
+            100,
+            current * 18
+          )
+      )
+    );
+
+  return {
+    gain,
+    hours,
+    milliseconds:
+      hours *
+      60 *
+      60 *
+      1000,
+    cost,
+    targetOverall:
+      cap,
+  };
+}
+
+export function getFullTrainingForPlayer(
+  game,
+  player,
+  stageCap = DEFAULT_STAGE_CAP
+) {
+  const check =
+    canSendToTraining(
+      game,
+      player,
+      stageCap
+    );
+
+  if (
+    !check.allowed
+  ) {
+    return {
+      allowed: false,
+      message:
+        check.message,
+      gain: 0,
+      hours: 0,
+      milliseconds: 0,
+      cost: 0,
+      targetOverall:
+        safeNumber(
+          player?.overall
+        ),
+    };
+  }
+
+  const plan =
+    calculateFullTrainingPlan(
+      player.overall,
+      stageCap
+    );
+
+  return {
+    allowed:
+      plan.gain > 0,
+
+    message:
+      plan.gain > 0
+        ? ""
+        : "Oyuncu zaten maksimum seviyede.",
+
+    ...plan,
+  };
+}
+
+/* =========================================================
+   ANTRENMAN HIZLANDIRMA
+========================================================= */
+
+/*
+  Hızlandır maliyeti kalan süreye göre hesaplanır.
+
+  Her kalan saat yaklaşık 100 Coin.
+  Minimum 50 Coin.
+
+  Örnek:
+  30 dk  -> 50 Coin
+  2 saat -> 200 Coin
+  8 saat -> 800 Coin
+*/
+export function getTrainingSpeedUpCost(
+  session,
+  now = Date.now()
+) {
+  if (!session) {
+    return 0;
+  }
+
+  const remaining =
+    Math.max(
+      0,
+      safeNumber(
+        session.endsAt
+      ) - now
+    );
+
+  if (!remaining) {
+    return 0;
+  }
+
+  const remainingHours =
+    remaining /
+    (
+      60 *
+      60 *
+      1000
+    );
+
+  return Math.max(
+    50,
+    Math.ceil(
+      remainingHours * 100
+    )
+  );
+}
+
+/* =========================================================
+   KİRALAMA
+========================================================= */
+
+export function canRentPlayer(
+  game,
+  player
+) {
+  if (!player) {
+    return {
+      allowed: false,
+      message:
+        "Oyuncu bulunamadı.",
+    };
+  }
+
+  if (
+    player.unsellable ||
+    player.rarity ===
+      "elturco"
+  ) {
+    return {
+      allowed: false,
+      message:
+        "EL TURCO kiraya verilemez.",
+    };
+  }
+
+  if (
+    !game?.rentalCenter
+      ?.unlocked
+  ) {
+    return {
+      allowed: false,
+      message:
+        "Önce Kiralık Merkezi açmalısın.",
+    };
+  }
+
+  if (
+    isPlayerInActiveFormation(
+      player,
+      game
+    )
+  ) {
+    return {
+      allowed: false,
+      message:
+        "🔒 OYUNCU ŞU AN KADRODA",
+    };
+  }
+
+  if (
+    isPlayerBusy(
+      player,
+      game
+    )
+  ) {
+    return {
+      allowed: false,
+      message:
+        "Bu oyuncu şu anda kullanılamıyor.",
+    };
+  }
+
+  const slots =
+    Math.max(
+      0,
+      safeNumber(
+        game?.rentalCenter
+          ?.slots,
+        0
+      )
+    );
+
+  if (slots <= 0) {
+    return {
+      allowed: false,
+      message:
+        "Kiralık slotun yok.",
+    };
+  }
+
+  const activeRentals =
+    getActiveRentals(
+      game
+    );
+
+  if (
+    activeRentals.length >=
+    slots
+  ) {
+    return {
+      allowed: false,
+      message:
+        "Kiralık slotların dolu.",
+    };
+  }
+
   return canTemporarilyRemovePlayer(
     game,
     player.id
@@ -997,7 +801,91 @@ export function canRentPlayer(
 }
 
 /* =========================================================
-   SAAT
+   KİRALIK GERİ ÇAĞIRMA
+========================================================= */
+
+export function getRentalRecallRatio(
+  rental,
+  now = Date.now()
+) {
+  if (!rental) {
+    return 0;
+  }
+
+  const startedAt =
+    safeNumber(
+      rental.startedAt
+    );
+
+  const endsAt =
+    safeNumber(
+      rental.endsAt
+    );
+
+  const total =
+    Math.max(
+      1,
+      endsAt -
+        startedAt
+    );
+
+  const elapsed =
+    Math.max(
+      0,
+      Math.min(
+        total,
+        now -
+          startedAt
+      )
+    );
+
+  return Math.max(
+    0,
+    Math.min(
+      1,
+      elapsed / total
+    )
+  );
+}
+
+export function calculateRentalRecallIncome(
+  rental,
+  fullIncome,
+  now = Date.now()
+) {
+  const ratio =
+    getRentalRecallRatio(
+      rental,
+      now
+    );
+
+  return Math.max(
+    0,
+    Math.floor(
+      Math.max(
+        0,
+        safeNumber(
+          fullIncome
+        )
+      ) * ratio
+    )
+  );
+}
+
+/* =========================================================
+   EVENT COOLDOWN
+========================================================= */
+
+export function getEventCooldownRemaining() {
+  return 0;
+}
+
+export function isEventMatchReady() {
+  return true;
+}
+
+/* =========================================================
+   SAAT FORMATLARI
 ========================================================= */
 
 export function millisecondsToClock(
@@ -1007,9 +895,9 @@ export function millisecondsToClock(
     Math.max(
       0,
       Math.floor(
-        Number(
+        safeNumber(
           milliseconds
-        ) || 0
+        )
       )
     );
 
@@ -1025,8 +913,10 @@ export function millisecondsToClock(
 
   const minutes =
     Math.floor(
-      (seconds % 3600) /
-        60
+      (
+        seconds %
+        3600
+      ) / 60
     );
 
   const remainingSeconds =
@@ -1046,6 +936,10 @@ export function millisecondsToClock(
     .join(":");
 }
 
+/* =========================================================
+   OYUNDA GEÇİRİLEN SÜRE
+========================================================= */
+
 export function formatPlayTime(
   totalSeconds
 ) {
@@ -1053,9 +947,9 @@ export function formatPlayTime(
     Math.max(
       0,
       Math.floor(
-        Number(
+        safeNumber(
           totalSeconds
-        ) || 0
+        )
       )
     );
 
@@ -1066,179 +960,22 @@ export function formatPlayTime(
 
   const minutes =
     Math.floor(
-      (seconds % 3600) /
-        60
+      (
+        seconds %
+        3600
+      ) / 60
     );
+
+  const remainingSeconds =
+    seconds % 60;
 
   if (hours > 0) {
-    return `${hours} saat ${minutes} dakika`;
+    return `${hours} sa ${minutes} dk`;
   }
 
-  return `${minutes} dakika`;
-}
-
-/* =========================================================
-   GÜNLÜK ÖDÜL
-========================================================= */
-
-export function getNextDailyRewardTime(
-  game
-) {
-  const lastClaimAt =
-    Number(
-      game?.daily
-        ?.lastClaimAt ||
-        game?.daily
-          ?.lastClaim ||
-        0
-    ) || 0;
-
-  if (!lastClaimAt) {
-    return 0;
+  if (minutes > 0) {
+    return `${minutes} dk ${remainingSeconds} sn`;
   }
 
-  return (
-    lastClaimAt +
-    DAILY_REWARD_COOLDOWN_MS
-  );
-}
-
-export function getDailyRewardRemaining(
-  game,
-  now = Date.now()
-) {
-  const next =
-    getNextDailyRewardTime(
-      game
-    );
-
-  if (!next) {
-    return 0;
-  }
-
-  return Math.max(
-    0,
-    next - now
-  );
-}
-
-export function isDailyRewardReady(
-  game,
-  now = Date.now()
-) {
-  return (
-    getDailyRewardRemaining(
-      game,
-      now
-    ) === 0
-  );
-}
-
-/* =========================================================
-   EVENT COOLDOWN
-========================================================= */
-
-export function getEventCooldownRemaining(
-  eventState,
-  now = Date.now()
-) {
-  const availableAt =
-    Number(
-      eventState
-        ?.nextMatchAt ||
-        0
-    );
-
-  return Math.max(
-    0,
-    availableAt - now
-  );
-}
-
-export function isEventMatchReady(
-  eventState,
-  now = Date.now()
-) {
-  return (
-    getEventCooldownRemaining(
-      eventState,
-      now
-    ) === 0
-  );
-}
-
-/* =========================================================
-   KİRALIK İLERLEME
-========================================================= */
-
-export function getRentalProgress(
-  rental,
-  now = Date.now()
-) {
-  if (!rental) {
-    return {
-      finished: true,
-      elapsed: 0,
-      remaining: 0,
-    };
-  }
-
-  const startedAt =
-    Number(
-      rental.startedAt
-    ) || now;
-
-  const endsAt =
-    Number(
-      rental.endsAt
-    ) || now;
-
-  return {
-    finished:
-      now >= endsAt,
-
-    elapsed:
-      Math.max(
-        0,
-        Math.min(
-          now,
-          endsAt
-        ) - startedAt
-      ),
-
-    remaining:
-      Math.max(
-        0,
-        endsAt - now
-      ),
-  };
-}
-
-/* =========================================================
-   ANTRENÖR İLERLEME
-========================================================= */
-
-export function getCoachSessionProgress(
-  session,
-  now = Date.now()
-) {
-  if (!session) {
-    return {
-      finished: true,
-      remaining: 0,
-    };
-  }
-
-  return {
-    finished:
-      now >=
-      session.endsAt,
-
-    remaining:
-      Math.max(
-        0,
-        session.endsAt -
-          now
-      ),
-  };
+  return `${remainingSeconds} sn`;
 }

@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import PlayerCard from "./components/PlayerCard";
+import BattleAnimation from "./components/BattleAnimation";
 
 import {
   calculatePlayerPrice,
@@ -38,7 +39,10 @@ import {
   canSendToCoach,
   canSendToTraining,
   EVENT_MATCH_COOLDOWN_MS,
+  formatPlayTime,
   getFullTrainingForPlayer,
+  getTrainingSessions,
+  calculateRentalRecallIncome,
   isPlayerBusy,
   isPlayerInActiveFormation,
   millisecondsToClock,
@@ -96,6 +100,14 @@ import {
   readFinalSave,
   useFinalGameSystems,
 } from "./utils/useFinalGameSystems";
+
+import {
+  CHANCE_DRAW_COST,
+  autoDrawChancePool,
+  drawChancePool,
+  getChancePoolSummary,
+  normalizeChancePool,
+} from "./utils/chancePool";
 
 /* =========================================================
    SABİTLER
@@ -294,6 +306,8 @@ function createNewGame() {
 
     trophies: 0,
 
+    playTimeSeconds: 0,
+
     activeStage: 1,
 
     collection:
@@ -316,7 +330,7 @@ function createNewGame() {
 
     trainingCap: 30,
 
-    training: null,
+    training: [],
 
     fullTraining: false,
 
@@ -366,11 +380,196 @@ function createNewGame() {
     },
 
     missions: null,
+
+    chancePool: normalizeChancePool(null),
   };
 
-  return normalizeFinalSystems(
+  return normalizeAppState(
     initial
   );
+}
+
+function normalizeAppState(game = {}) {
+  const normalized =
+    normalizeFinalSystems(
+      game
+    );
+
+  return {
+    ...normalized,
+
+    playTimeSeconds:
+      Math.max(
+        0,
+        Number(
+          normalized.playTimeSeconds ??
+            normalized.playTime ??
+            normalized.stats
+              ?.playTimeSeconds ??
+            normalized.stats
+              ?.playTime ??
+            0
+        ) || 0
+      ),
+
+    squad:
+      Array.isArray(
+        normalized.squad
+      )
+        ? normalized.squad
+        : [],
+
+    formation:
+      normalized.formation &&
+      typeof normalized.formation ===
+        "object"
+        ? normalized.formation
+        : {},
+
+    career: {
+      ...(normalized.career ||
+        {}),
+
+      match:
+        Math.max(
+          1,
+          Number(
+            normalized.career
+              ?.match || 1
+          ) || 1
+        ),
+
+      wins:
+        Math.max(
+          0,
+          Number(
+            normalized.career
+              ?.wins || 0
+          ) || 0
+        ),
+
+      losses:
+        Math.max(
+          0,
+          Number(
+            normalized.career
+              ?.losses || 0
+          ) || 0
+        ),
+
+      completedStages:
+        Array.isArray(
+          normalized.career
+            ?.completedStages
+        )
+          ? normalized.career
+              .completedStages
+          : [],
+    },
+
+    training:
+      Array.isArray(
+        normalized.training
+      )
+        ? normalized.training
+            .filter(Boolean)
+        : normalized.training
+            ?.playerId
+          ? [normalized.training]
+          : [],
+
+    daily: {
+      ...(normalized.daily ||
+        {}),
+
+      lastClaimAt:
+        Number(
+          normalized.daily
+            ?.lastClaimAt || 0
+        ) || 0,
+
+      streak:
+        Math.max(
+          0,
+          Number(
+            normalized.daily
+              ?.streak || 0
+          ) || 0
+        ),
+    },
+
+    rentalCenter: {
+      ...(normalized.rentalCenter ||
+        {}),
+
+      unlocked:
+        Boolean(
+          normalized.rentalCenter
+            ?.unlocked
+        ),
+
+      slots:
+        Math.min(
+          MAX_RENTAL_SLOTS,
+          Math.max(
+            1,
+            Number(
+              normalized
+                .rentalCenter
+                ?.slots || 1
+            ) || 1
+          )
+        ),
+
+      rentals:
+        Array.isArray(
+          normalized.rentalCenter
+            ?.rentals
+        )
+          ? normalized
+              .rentalCenter
+              .rentals
+          : [],
+
+      pendingCoins:
+        Math.max(
+          0,
+          Number(
+            normalized
+              .rentalCenter
+              ?.pendingCoins || 0
+          ) || 0
+        ),
+    },
+
+    chancePool:
+      normalizeChancePool(
+        normalized.chancePool
+      ),
+
+    coaches: {
+      ...(normalized.coaches ||
+        {}),
+
+      owned:
+        Array.isArray(
+          normalized.coaches
+            ?.owned
+        )
+          ? normalized.coaches
+              .owned
+          : [],
+
+      activeSessions:
+        Array.isArray(
+          normalized.coaches
+            ?.activeSessions
+        )
+          ? normalized.coaches
+              .activeSessions
+          : [],
+    },
+  };
 }
 
 /* =========================================================
@@ -391,6 +590,125 @@ function getPlayerById(
     (player) =>
       player.id === id
   );
+}
+
+function generateUniqueRewardChoices(
+  minimum,
+  maximum,
+  count = 3
+) {
+  const choices = [];
+  const usedKeys = new Set();
+
+  let attempts = 0;
+
+  while (
+    choices.length < count &&
+    attempts < 60
+  ) {
+    attempts += 1;
+
+    const player =
+      generatePlayer(
+        minimum,
+        maximum
+      );
+
+    const key =
+      `${player.name}|${player.position}|${player.country}|${player.overall}`;
+
+    if (
+      usedKeys.has(key)
+    ) {
+      continue;
+    }
+
+    usedKeys.add(key);
+    choices.push(player);
+  }
+
+  while (
+    choices.length < count
+  ) {
+    choices.push(
+      generatePlayer(
+        minimum,
+        maximum
+      )
+    );
+  }
+
+  return choices;
+}
+
+function getCareerLossPlayer(
+  game
+) {
+  const protectedPlayer = (
+    player
+  ) =>
+    !player ||
+    player.sold ||
+    player.unsellable ||
+    player.specialReward ||
+    player.rarity ===
+      "elturco" ||
+    player.overall === 100;
+
+  const formationIds = [
+    ...new Set(
+      Object.values(
+        game.formation || {}
+      ).filter(Boolean)
+    ),
+  ];
+
+  const squadIds =
+    formationIds.length
+      ? formationIds
+      : [
+          ...new Set(
+            game.squad || []
+          ),
+        ];
+
+  const squadPool =
+    squadIds
+      .map((id) =>
+        getPlayerById(
+          game,
+          id
+        )
+      )
+      .filter(
+        (player) =>
+          !protectedPlayer(
+            player
+          )
+      );
+
+  if (squadPool.length) {
+    return randomItem(
+      squadPool
+    );
+  }
+
+  const fallback =
+    (game.collection || [])
+      .filter(
+        (player) =>
+          !protectedPlayer(
+            player
+          ) &&
+          !isPlayerBusy(
+            player,
+            game
+          )
+      );
+
+  return fallback.length
+    ? randomItem(fallback)
+    : null;
 }
 
 function getSquadPlayers(
@@ -435,9 +753,13 @@ function getPlayerStatus(
   }
 
   if (
-    game.training
-      ?.playerId ===
-    player.id
+    getTrainingSessions(
+      game
+    ).some(
+      (session) =>
+        session.playerId ===
+        player.id
+    )
   ) {
     return "ANTRENMANDA";
   }
@@ -587,7 +909,7 @@ function App() {
       readFinalSave();
 
     return loaded
-      ? normalizeFinalSystems(
+      ? normalizeAppState(
           loaded
         )
       : createNewGame();
@@ -733,54 +1055,78 @@ function App() {
   }, []);
 
   /* =======================================================
-     ANTRENMAN BİTİŞİ
+     ANTRENMAN BİTİŞLERİ
   ======================================================= */
 
   useEffect(() => {
-    if (
-      !game.training ||
-      now <
-        game.training.endsAt
-    ) {
+    const sessions =
+      getTrainingSessions(
+        game
+      );
+
+    const finished =
+      sessions.filter(
+        (session) =>
+          now >=
+          Number(
+            session.endsAt || 0
+          )
+      );
+
+    if (!finished.length) {
       return;
     }
 
-    const training =
-      game.training;
+    setGame((previous) => {
+      const previousSessions =
+        getTrainingSessions(
+          previous
+        );
 
-    setGame(
-      (previous) => {
-        const player =
-          previous.collection.find(
-            (item) =>
-              item.id ===
-              training.playerId
-          );
+      const finishedIds =
+        new Set(
+          finished.map(
+            (session) =>
+              session.playerId
+          )
+        );
 
-        if (!player) {
-          return {
-            ...previous,
-            training: null,
-          };
-        }
+      let collection =
+        [...previous.collection];
 
-        const cap =
-          getCurrentStageCap(
-            previous
-          );
+      let completedCount = 0;
 
-        const overall =
-          Math.min(
-            cap,
-            player.overall +
-              training.gain
-          );
+      finished.forEach(
+        (training) => {
+          const player =
+            collection.find(
+              (item) =>
+                item.id ===
+                training.playerId
+            );
 
-        return {
-          ...previous,
+          if (!player) {
+            return;
+          }
 
-          collection:
-            previous.collection.map(
+          const cap =
+            getCurrentStageCap(
+              previous
+            );
+
+          const overall =
+            Math.min(
+              cap,
+              Number(
+                player.overall || 0
+              ) +
+                Number(
+                  training.gain || 0
+                )
+            );
+
+          collection =
+            collection.map(
               (item) =>
                 item.id ===
                 player.id
@@ -793,21 +1139,42 @@ function App() {
                         ),
                     }
                   : item
-            ),
+            );
 
-          training: null,
+          completedCount += 1;
+        }
+      );
 
-          missions:
-            incrementMissionStat(
-              previous.missions,
-              "trainingCompleted"
-            ),
-        };
-      }
-    );
+      return {
+        ...previous,
+        collection,
+        training:
+          previousSessions.filter(
+            (session) =>
+              !(
+                finishedIds.has(
+                  session.playerId
+                ) &&
+                now >=
+                  Number(
+                    session.endsAt ||
+                      0
+                  )
+              )
+          ),
+        missions:
+          incrementMissionStat(
+            previous.missions,
+            "trainingCompleted",
+            completedCount
+          ),
+      };
+    });
 
     showToast(
-      "✅ Antrenman tamamlandı.",
+      finished.length === 1
+        ? "✅ Antrenman tamamlandı."
+        : `✅ ${finished.length} antrenman tamamlandı.`,
       "success"
     );
   }, [
@@ -1115,16 +1482,51 @@ function App() {
         stageCap
       );
 
-    const ids =
-      result?.squadIds ||
-      result?.squad ||
-      [];
+    const ids = [
+      ...new Set(
+        (
+          result?.squadIds ||
+          result?.squad ||
+          []
+        ).filter(Boolean)
+      ),
+    ].slice(0, 10);
 
     if (
+      result?.success ===
+        false ||
       ids.length < 10
     ) {
       showToast(
-        "Uygun 10 oyuncu bulunamadı.",
+        result?.message ||
+          "Uygun 10 oyuncu bulunamadı.",
+        "error"
+      );
+      return;
+    }
+
+    const nextFormation =
+      result.formation || {};
+
+    const formationIds = [
+      ...new Set(
+        FORMATION_SLOTS
+          .map(
+            (slot) =>
+              nextFormation[
+                slot.id
+              ]
+          )
+          .filter(Boolean)
+      ),
+    ];
+
+    if (
+      formationIds.length !==
+      10
+    ) {
+      showToast(
+        "En iyi kadro kurulamadı. Pozisyon dağılımını kontrol et.",
         "error"
       );
       return;
@@ -1135,14 +1537,10 @@ function App() {
         ...previous,
 
         squad:
-          ids.slice(
-            0,
-            10
-          ),
+          formationIds,
 
         formation:
-          result.formation ||
-          previous.formation,
+          nextFormation,
 
         missions:
           incrementMissionStat(
@@ -1151,6 +1549,8 @@ function App() {
           ),
       })
     );
+
+    setSelectedSlot(null);
 
     showToast(
       `✅ En iyi kadro otomatik kuruldu. Ortalama GEN: ${
@@ -1184,48 +1584,82 @@ function App() {
       return;
     }
 
-    const existingId =
-      game.formation?.[
-        selectedSlot.id
-      ];
-
-    let nextSquad = [
-      ...(game.squad || []),
-    ].filter(
-      (id) =>
-        id !== player.id
-    );
-
-    if (existingId) {
-      nextSquad =
-        nextSquad.filter(
-          (id) =>
-            id !== existingId
-        );
-    }
-
-    nextSquad.push(
-      player.id
-    );
+    const slotId =
+      selectedSlot.id;
 
     setGame(
-      (previous) => ({
-        ...previous,
-
-        squad:
-          nextSquad.slice(
-            0,
-            10
-          ),
-
-        formation: {
+      (previous) => {
+        const nextFormation = {
           ...(previous.formation ||
             {}),
+        };
 
-          [selectedSlot.id]:
-            player.id,
-        },
-      })
+        const oldSlotPlayerId =
+          nextFormation[
+            slotId
+          ];
+
+        Object.keys(
+          nextFormation
+        ).forEach(
+          (key) => {
+            if (
+              key !== slotId &&
+              nextFormation[
+                key
+              ] === player.id
+            ) {
+              delete nextFormation[
+                key
+              ];
+            }
+          }
+        );
+
+        nextFormation[
+          slotId
+        ] = player.id;
+
+        const formationIds = [
+          ...new Set(
+            FORMATION_SLOTS
+              .map(
+                (slot) =>
+                  nextFormation[
+                    slot.id
+                  ]
+              )
+              .filter(Boolean)
+          ),
+        ];
+
+        const fallbackIds =
+          (
+            previous.squad ||
+            []
+          ).filter(
+            (id) =>
+              id !==
+                player.id &&
+              id !==
+                oldSlotPlayerId &&
+              !formationIds.includes(
+                id
+              )
+          );
+
+        return {
+          ...previous,
+
+          formation:
+            nextFormation,
+
+          squad: [
+            ...formationIds,
+            ...fallbackIds,
+          ].slice(0, 10),
+        };
+      }
     );
 
     setSelectedSlot(null);
@@ -1259,24 +1693,13 @@ function App() {
       return;
     }
 
-    if (game.training) {
-      showToast(
-        "Zaten devam eden bir antrenman var.",
-        "error"
-      );
-      return;
-    }
-
     const cost =
       calculateTrainingCost(
         plan,
         player.overall
       );
 
-    if (
-      game.coins <
-      cost
-    ) {
+    if (game.coins < cost) {
       showToast(
         "Yeterli Coin yok.",
         "error"
@@ -1284,40 +1707,37 @@ function App() {
       return;
     }
 
-    setGame(
-      (previous) => ({
-        ...previous,
+    const startedAt =
+      Date.now();
 
-        coins:
-          previous.coins -
-          cost,
-
-        training: {
-          playerId:
-            player.id,
-          gain:
-            plan.gain,
-          startedAt:
-            Date.now(),
+    setGame((previous) => ({
+      ...previous,
+      coins:
+        previous.coins - cost,
+      training: [
+        ...getTrainingSessions(
+          previous
+        ),
+        {
+          id:
+            `${startedAt}-${player.id}`,
+          playerId: player.id,
+          gain: plan.gain,
+          startedAt,
           endsAt:
-            Date.now() +
+            startedAt +
             plan.hours *
-              60 *
-              60 *
-              1000,
+              60 * 60 * 1000,
         },
+      ],
+      missions:
+        incrementMissionStat(
+          previous.missions,
+          "trainingStarted"
+        ),
+    }));
 
-        missions:
-          incrementMissionStat(
-            previous.missions,
-            "trainingStarted"
-          ),
-      })
-    );
-
-    setTrainingPlayerId(
-      null
-    );
+    setTrainingPlayerId(null);
 
     showToast(
       `🏋️ ${player.name} antrenmana başladı.`,
@@ -1343,14 +1763,6 @@ function App() {
       return;
     }
 
-    if (game.training) {
-      showToast(
-        "Zaten devam eden bir antrenman var.",
-        "error"
-      );
-      return;
-    }
-
     if (
       game.coins <
       plan.cost
@@ -1364,41 +1776,114 @@ function App() {
       return;
     }
 
-    setGame(
-      (previous) => ({
-        ...previous,
+    const startedAt =
+      Date.now();
 
-        coins:
-          previous.coins -
-          plan.cost,
-
-        training: {
-          playerId:
-            player.id,
-          gain:
-            plan.gain,
+    setGame((previous) => ({
+      ...previous,
+      coins:
+        previous.coins -
+        plan.cost,
+      training: [
+        ...getTrainingSessions(
+          previous
+        ),
+        {
+          id:
+            `${startedAt}-${player.id}`,
+          playerId: player.id,
+          gain: plan.gain,
           full: true,
-          startedAt:
-            Date.now(),
+          startedAt,
           endsAt:
-            Date.now() +
+            startedAt +
             plan.milliseconds,
         },
+      ],
+      missions:
+        incrementMissionStat(
+          previous.missions,
+          "trainingStarted"
+        ),
+    }));
 
-        missions:
-          incrementMissionStat(
-            previous.missions,
-            "trainingStarted"
-          ),
-      })
-    );
-
-    setTrainingPlayerId(
-      null
-    );
+    setTrainingPlayerId(null);
 
     showToast(
       `🔥 FULL ANTRENMAN başladı: +${plan.gain} GEN`,
+      "success"
+    );
+  }
+
+  function getTrainingSpeedUpCost(
+    session
+  ) {
+    const remaining =
+      Math.max(
+        0,
+        Number(
+          session?.endsAt || 0
+        ) - Date.now()
+      );
+
+    const minutes =
+      Math.ceil(
+        remaining / 60000
+      );
+
+    return Math.max(
+      10,
+      minutes * 2
+    );
+  }
+
+  function speedUpTraining(
+    session
+  ) {
+    if (!session) {
+      return;
+    }
+
+    const cost =
+      getTrainingSpeedUpCost(
+        session
+      );
+
+    if (game.coins < cost) {
+      showToast(
+        "Hızlandırmak için yeterli Coin yok.",
+        "error"
+      );
+      return;
+    }
+
+    setGame((previous) => ({
+      ...previous,
+      coins:
+        previous.coins - cost,
+      training:
+        getTrainingSessions(
+          previous
+        ).map(
+          (item) =>
+            item.id ===
+              session.id ||
+            (
+              !item.id &&
+              item.playerId ===
+                session.playerId
+            )
+              ? {
+                  ...item,
+                  endsAt:
+                    Date.now(),
+                }
+              : item
+        ),
+    }));
+
+    showToast(
+      "⚡ Antrenman hızlandırıldı.",
       "success"
     );
   }
@@ -1672,14 +2157,31 @@ function App() {
   }
 
   function buyRentalSlot() {
+    if (
+      !game.rentalCenter
+        ?.unlocked
+    ) {
+      showToast(
+        "Önce Kiralık Merkezi'ni aç.",
+        "error"
+      );
+      return;
+    }
+
     const current =
-      game.rentalCenter
-        .slots;
+      Number(
+        game.rentalCenter
+          ?.slots || 1
+      );
 
     if (
       current >=
       MAX_RENTAL_SLOTS
     ) {
+      showToast(
+        "Tüm kiralık slotlar açık.",
+        "info"
+      );
       return;
     }
 
@@ -1709,10 +2211,16 @@ function App() {
 
         rentalCenter: {
           ...previous.rentalCenter,
+
           slots:
-            previous
-              .rentalCenter
-              .slots + 1,
+            Math.min(
+              MAX_RENTAL_SLOTS,
+              Number(
+                previous
+                  .rentalCenter
+                  ?.slots || 1
+              ) + 1
+            ),
         },
       })
     );
@@ -1809,6 +2317,62 @@ function App() {
     );
   }
 
+  function recallRental(
+    rental
+  ) {
+    if (!rental) {
+      return;
+    }
+
+    const player =
+      getPlayerById(
+        game,
+        rental.playerId
+      );
+
+    if (!player) {
+      return;
+    }
+
+    const fullIncome =
+      Math.round(
+        Number(
+          player.overall || 0
+        ) * 80
+      );
+
+    const earned =
+      calculateRentalRecallIncome(
+        rental,
+        fullIncome,
+        Date.now()
+      );
+
+    setGame((previous) => ({
+      ...previous,
+      rentalCenter: {
+        ...previous.rentalCenter,
+        rentals:
+          previous.rentalCenter
+            .rentals.filter(
+              (item) =>
+                item.id !==
+                rental.id
+            ),
+        pendingCoins:
+          Number(
+            previous.rentalCenter
+              .pendingCoins || 0
+          ) + earned,
+      },
+    }));
+
+    showToast(
+      `↩️ ${player.name} geri çağrıldı • 🪙${money(earned)}`,
+      "success"
+    );
+  }
+
   function collectRentalIncome() {
     const amount =
       Number(
@@ -1866,12 +2430,18 @@ function App() {
   function buyCoach(
     coach
   ) {
+    const owned =
+      game.coaches
+        ?.owned || [];
+
     if (
-      game.coaches.owned
-        .includes(
-          coach.id
-        )
+      owned.includes(
+        coach.id
+      )
     ) {
+      setSelectedCoachId(
+        coach.id
+      );
       return;
     }
 
@@ -1895,15 +2465,32 @@ function App() {
           coach.price,
 
         coaches: {
-          ...previous.coaches,
+          ...(previous.coaches ||
+            {
+              owned: [],
+              activeSessions:
+                [],
+            }),
 
           owned: [
-            ...previous
-              .coaches.owned,
-            coach.id,
+            ...new Set([
+              ...(
+                previous.coaches
+                  ?.owned || []
+              ),
+              coach.id,
+            ]),
           ],
         },
       })
+    );
+
+    setSelectedCoachId(
+      coach.id
+    );
+
+    setCoachPlayerIds(
+      []
     );
 
     showToast(
@@ -1929,16 +2516,52 @@ function App() {
     }
 
     if (
-      !game.coaches.owned
-        .includes(
-          coach.id
-        )
+      !(
+        game.coaches
+          ?.owned || []
+      ).includes(
+        coach.id
+      )
     ) {
+      showToast(
+        "Bu antrenöre sahip değilsin.",
+        "error"
+      );
       return;
     }
 
+    const coachBusy =
+      (
+        game.coaches
+          ?.activeSessions ||
+        []
+      ).some(
+        (session) =>
+          session.coachId ===
+            coach.id &&
+          session.endsAt >
+            now
+      );
+
+    if (coachBusy) {
+      showToast(
+        "Bu antrenör şu anda çalışıyor.",
+        "error"
+      );
+      return;
+    }
+
+    const uniqueIds = [
+      ...new Set(
+        coachPlayerIds
+      ),
+    ].slice(
+      0,
+      coach.slots
+    );
+
     if (
-      !coachPlayerIds.length
+      !uniqueIds.length
     ) {
       showToast(
         "Oyuncu seç.",
@@ -1948,7 +2571,7 @@ function App() {
     }
 
     const selected =
-      coachPlayerIds
+      uniqueIds
         .map((id) =>
           getPlayerById(
             game,
@@ -1956,6 +2579,17 @@ function App() {
           )
         )
         .filter(Boolean);
+
+    if (
+      selected.length !==
+      uniqueIds.length
+    ) {
+      showToast(
+        "Seçilen oyunculardan biri bulunamadı.",
+        "error"
+      );
+      return;
+    }
 
     const invalid =
       selected.find(
@@ -1968,48 +2602,60 @@ function App() {
       );
 
     if (invalid) {
+      const check =
+        canSendToCoach(
+          game,
+          invalid,
+          stageCap
+        );
+
       showToast(
-        `${invalid.name} kullanılamıyor.`,
+        check.message ||
+          `${invalid.name} kullanılamıyor.`,
         "error"
       );
       return;
     }
+
+    const startedAt =
+      Date.now();
 
     setGame(
       (previous) => ({
         ...previous,
 
         coaches: {
-          ...previous.coaches,
+          ...(previous.coaches ||
+            {
+              owned: [],
+              activeSessions:
+                [],
+            }),
 
           activeSessions: [
-            ...previous
-              .coaches
-              .activeSessions,
+            ...(
+              previous.coaches
+                ?.activeSessions ||
+              []
+            ),
 
             {
               id:
-                `${Date.now()}-${coach.id}`,
+                `${startedAt}-${coach.id}`,
 
               coachId:
                 coach.id,
 
               playerIds:
-                selected
-                  .slice(
-                    0,
-                    coach.slots
-                  )
-                  .map(
-                    (player) =>
-                      player.id
-                  ),
+                selected.map(
+                  (player) =>
+                    player.id
+                ),
 
-              startedAt:
-                Date.now(),
+              startedAt,
 
               endsAt:
-                Date.now() +
+                startedAt +
                 coach.minutes *
                   60 *
                   1000,
@@ -2467,22 +3113,6 @@ function App() {
         return;
       }
 
-      if (
-        Number(
-          state?.nextMatchAt ||
-            0
-        ) >
-        Date.now()
-      ) {
-        showToast(
-          `⏳ ${millisecondsToClock(
-            state.nextMatchAt -
-              Date.now()
-          )}`,
-          "error"
-        );
-        return;
-      }
 
       cap =
         activeEvent.playCap;
@@ -2611,102 +3241,97 @@ function App() {
         },
       })
     );
-
-    window.setTimeout(
-      () => {
-        setBattle(
-          (previous) => {
-            if (
-              !previous ||
-              !previous.reveal
-            ) {
-              return previous;
-            }
-
-            const result =
-              previous.reveal
-                .result;
-
-            const newPlayerScore =
-              previous.playerScore +
-              (result.winner ===
-              "player"
-                ? 1
-                : 0);
-
-            const newOpponentScore =
-              previous.opponentScore +
-              (result.winner ===
-              "opponent"
-                ? 1
-                : 0);
-
-            const nextIndex =
-              previous.roundIndex +
-              1;
-
-            const done =
-              nextIndex >=
-              previous.rounds
-                .length;
-
-            const next = {
-              ...previous,
-
-              playerScore:
-                newPlayerScore,
-
-              opponentScore:
-                newOpponentScore,
-
-              results: [
-                ...previous.results,
-                previous.reveal,
-              ],
-
-              usedPlayerIds: [
-                ...previous
-                  .usedPlayerIds,
-                previous.reveal
-                  .player.id,
-              ],
-
-              usedOpponentIds: [
-                ...previous
-                  .usedOpponentIds,
-                previous.reveal
-                  .opponent.id,
-              ],
-
-              roundIndex:
-                nextIndex,
-
-              reveal: null,
-
-              phase:
-                done
-                  ? "finished"
-                  : "choose",
-            };
-
-            if (done) {
-              window.setTimeout(
-                () =>
-                  finishBattle(
-                    next
-                  ),
-                50
-              );
-            }
-
-            return next;
-          }
-        );
-      },
-      1500
-    );
   }
 
+  function completeBattleAnimation() {
+    setBattle(
+      (previous) => {
+        if (
+          !previous ||
+          previous.phase !==
+            "reveal" ||
+          !previous.reveal
+        ) {
+          return previous;
+        }
+
+        const currentReveal =
+          previous.reveal;
+
+        const result =
+          currentReveal.result;
+
+        const newPlayerScore =
+          previous.playerScore +
+          (result.winner ===
+          "player"
+            ? 1
+            : 0);
+
+        const newOpponentScore =
+          previous.opponentScore +
+          (result.winner ===
+          "opponent"
+            ? 1
+            : 0);
+
+        const nextIndex =
+          previous.roundIndex +
+          1;
+
+        const done =
+          nextIndex >=
+          previous.rounds.length;
+
+        const next = {
+          ...previous,
+
+          playerScore:
+            newPlayerScore,
+
+          opponentScore:
+            newOpponentScore,
+
+          results: [
+            ...previous.results,
+            currentReveal,
+          ],
+
+          usedPlayerIds: [
+            ...previous.usedPlayerIds,
+            currentReveal.player.id,
+          ],
+
+          usedOpponentIds: [
+            ...previous.usedOpponentIds,
+            currentReveal.opponent.id,
+          ],
+
+          roundIndex:
+            nextIndex,
+
+          reveal: null,
+
+          phase:
+            done
+              ? "finished"
+              : "choose",
+        };
+
+        if (done) {
+          window.setTimeout(
+            () =>
+              finishBattle(
+                next
+              ),
+            50
+          );
+        }
+
+        return next;
+      }
+    );
+  }
   /* =======================================================
      BATTLE FINISH
   ======================================================= */
@@ -2747,39 +3372,136 @@ function App() {
     won,
     draw
   ) {
-    if (!won) {
+    if (draw) {
       setBattle(
         (previous) => ({
           ...previous,
           phase: "result",
           finalResult:
-            draw
-              ? "draw"
-              : "loss",
+            "draw",
         })
       );
 
       return;
     }
 
+    if (!won) {
+      const lostPlayer =
+        getCareerLossPlayer(
+          game
+        );
+
+      if (lostPlayer) {
+        setGame(
+          (previous) => {
+            const nextFormation = {
+              ...(previous.formation ||
+                {}),
+            };
+
+            Object.keys(
+              nextFormation
+            ).forEach(
+              (slotId) => {
+                if (
+                  nextFormation[
+                    slotId
+                  ] ===
+                  lostPlayer.id
+                ) {
+                  delete nextFormation[
+                    slotId
+                  ];
+                }
+              }
+            );
+
+            return {
+              ...previous,
+
+              collection:
+                previous.collection.filter(
+                  (player) =>
+                    player.id !==
+                    lostPlayer.id
+                ),
+
+              squad:
+                (
+                  previous.squad ||
+                  []
+                ).filter(
+                  (id) =>
+                    id !==
+                    lostPlayer.id
+                ),
+
+              formation:
+                nextFormation,
+
+              career: {
+                ...previous.career,
+
+                losses:
+                  Number(
+                    previous.career
+                      ?.losses || 0
+                  ) + 1,
+              },
+            };
+          }
+        );
+      }
+
+      setBattle(
+        (previous) => ({
+          ...previous,
+
+          phase: "result",
+
+          finalResult:
+            "loss",
+
+          lostPlayer:
+            lostPlayer ||
+            null,
+        })
+      );
+
+      return;
+    }
+
+    const careerRewardBase =
+      Math.max(
+        Number(
+          squadAverage || 0
+        ),
+        Number(
+          finalBattle.target || 0
+        )
+      );
+
     const rewardChoices =
-      Array.from(
-        {
-          length: 3,
-        },
-        () =>
-          generatePlayer(
-            Math.max(
-              10,
-              finalBattle.target -
-                4
-            ),
-            Math.min(
-              finalBattle.cap,
-              finalBattle.target +
-                2
+      generateUniqueRewardChoices(
+        Math.max(
+          10,
+          Math.min(
+            finalBattle.cap,
+            Math.floor(
+              careerRewardBase - 1
             )
           )
+        ),
+        Math.max(
+          10,
+          Math.min(
+            finalBattle.cap,
+            Math.ceil(
+              careerRewardBase + 4
+            )
+          )
+        ),
+        3
       );
 
     setBattle(
@@ -2915,9 +3637,7 @@ function App() {
                 event.id
               ],
 
-              nextMatchAt:
-                Date.now() +
-                EVENT_MATCH_COOLDOWN_MS,
+              nextMatchAt: 0,
             },
           },
         })
@@ -2953,20 +3673,70 @@ function App() {
         event.matches
       );
 
-    const rewardChoices =
-      Array.from(
-        {
-          length: 3,
-        },
-        () =>
-          generatePlayer(
-            event.min,
-            Math.min(
-              event.playCap,
-              event.max
+    const eventMatch =
+      Number(
+        currentState?.match || 1
+      );
+
+    const strongRewardMatch =
+      eventMatch % 3 === 0;
+
+    const lowMax =
+      Math.max(
+        event.min,
+        Math.min(
+          event.playCap,
+          Math.floor(
+            Math.max(
+              event.min,
+              squadAverage - 3
             )
           )
+        )
       );
+
+    let rewardChoices =
+      generateUniqueRewardChoices(
+        event.min,
+        lowMax,
+        3
+      );
+
+    if (strongRewardMatch) {
+      const strongMin =
+        Math.max(
+          event.min,
+          Math.min(
+            event.playCap,
+            Math.floor(
+              squadAverage
+            )
+          )
+        );
+
+      const strongMax =
+        Math.max(
+          strongMin,
+          Math.min(
+            event.playCap,
+            Math.ceil(
+              squadAverage + 3
+            )
+          )
+        );
+
+      rewardChoices = [
+        generatePlayer(
+          strongMin,
+          strongMax
+        ),
+        ...generateUniqueRewardChoices(
+          event.min,
+          lowMax,
+          2
+        ),
+      ];
+    }
 
     setBattle(
       (previous) => ({
@@ -3066,9 +3836,7 @@ function App() {
                   0
               ),
 
-            nextMatchAt:
-              Date.now() +
-              EVENT_MATCH_COOLDOWN_MS,
+            nextMatchAt: 0,
           },
         },
 
@@ -3919,6 +4687,31 @@ function App() {
   ======================================================= */
 
   if (battle) {
+    if (
+      battle.phase ===
+        "reveal" &&
+      battle.reveal
+    ) {
+      return (
+        <BattleAnimation
+          key={`${battle.roundIndex}-${battle.reveal.player.id}-${battle.reveal.opponent.id}`}
+          player={
+            battle.reveal.player
+          }
+          opponent={
+            battle.reveal.opponent
+          }
+          winner={
+            battle.reveal.result
+              .winner
+          }
+          onComplete={
+            completeBattleAnimation
+          }
+        />
+      );
+    }
+
     const available =
       availableRoundPlayers();
 
@@ -4222,6 +5015,35 @@ function App() {
                   </p>
                 )}
 
+                {battle.lostPlayer && (
+                  <div
+                    style={{
+                      maxWidth: 220,
+                      margin:
+                        "12px auto 18px",
+                    }}
+                  >
+                    <div
+                      className="section-eyebrow"
+                      style={{
+                        textAlign:
+                          "center",
+                        marginBottom:
+                          8,
+                      }}
+                    >
+                      KAYBETTİĞİN OYUNCU
+                    </div>
+
+                    <PlayerCard
+                      player={
+                        battle.lostPlayer
+                      }
+                      compact
+                    />
+                  </div>
+                )}
+
                 <button
                   type="button"
                   className="primary-button"
@@ -4254,6 +5076,56 @@ function App() {
   ======================================================= */
 
   let content = null;
+
+  /* =======================================================
+     ŞANS HAVUZU
+  ======================================================= */
+
+  function drawFromChancePool() {
+    if (game.coins < CHANCE_DRAW_COST) {
+      showToast("Şans Havuzu için en az 500 Coin gerekiyor.", "error");
+      return;
+    }
+
+    const result = drawChancePool(game.chancePool, Date.now());
+    if (!result.success || !result.player) {
+      showToast("Şans Havuzu boşaldı.", "error");
+      return;
+    }
+
+    setGame((previous) => ({
+      ...previous,
+      coins: previous.coins - CHANCE_DRAW_COST,
+      chancePool: result.pool,
+      collection: [...previous.collection, result.player],
+    }));
+
+    showToast(`🎰 ${result.player.name} • ${result.player.overall} GEN`, "success");
+  }
+
+  function autoDrawFromChancePool(mode) {
+    const result = autoDrawChancePool({
+      chancePool: game.chancePool,
+      coins: game.coins,
+      mode,
+      now: Date.now(),
+    });
+
+    if (!result.players.length) {
+      showToast(game.coins < CHANCE_DRAW_COST ? "Yeterli Coin yok." : "Şans Havuzu boşaldı.", "error");
+      return;
+    }
+
+    setGame((previous) => ({
+      ...previous,
+      coins: result.coins,
+      chancePool: result.pool,
+      collection: [...previous.collection, ...result.players],
+    }));
+
+    const last = result.players[result.players.length - 1];
+    showToast(`🎰 ${result.players.length} çekim • Son kart: ${last.name} ${last.overall} GEN`, "success");
+  }
 
   /* ---------------- HOME ---------------- */
 
@@ -4542,6 +5414,16 @@ function App() {
               >
                 Kiralık Merkezi
               </button>
+
+              <button
+                onClick={() =>
+                  openScreen(
+                    "chance-pool"
+                  )
+                }
+              >
+                🎰 Şans Havuzu
+              </button>
             </div>
           </div>
         </div>
@@ -4712,15 +5594,34 @@ function App() {
             <div className="card-grid">
               {ownedPlayers
                 .filter(
-                  (player) =>
-                    playerFitsSlot(
-                      player,
-                      selectedSlot
-                    ) &&
-                    !isPlayerBusy(
-                      player,
-                      game
-                    )
+                  (player) => {
+                    const usedInOtherSlot =
+                      Object.entries(
+                        game.formation ||
+                          {}
+                      ).some(
+                        ([
+                          slotId,
+                          playerId,
+                        ]) =>
+                          slotId !==
+                            selectedSlot.id &&
+                          playerId ===
+                            player.id
+                      );
+
+                    return (
+                      playerFitsSlot(
+                        player,
+                        selectedSlot
+                      ) &&
+                      !isPlayerBusy(
+                        player,
+                        game
+                      ) &&
+                      !usedInOtherSlot
+                    );
+                  }
                 )
                 .map(
                   (player) => (
@@ -4757,300 +5658,10 @@ function App() {
 
   /* ---------------- TRAINING ---------------- */
 
-  if (
-    screen === "training"
-  ) {
-    const trainingPlayer =
-      game.training
-        ? getPlayerById(
-            game,
-            game.training
-              .playerId
-          )
-        : null;
-
-    content = (
-      <section className="screen">
-        <BackButton
-          onClick={goHome}
-        />
-
-        <SectionHeader
-          eyebrow="TAKIMIM"
-          title="ANTRENMAN"
-        />
-
-        {game.training &&
-        trainingPlayer ? (
-          <div className="panel">
-            <div className="training-running">
-              <div>
-                <div className="section-eyebrow">
-                  ANTRENMAN DEVAM EDİYOR
-                </div>
-
-                <h2>
-                  {
-                    trainingPlayer.name
-                  }
-                </h2>
-
-                <div className="muted">
-                  +
-                  {
-                    game.training
-                      .gain
-                  }{" "}
-                  GEN
-                </div>
-              </div>
-
-              <strong>
-                {millisecondsToClock(
-                  Math.max(
-                    0,
-                    game.training
-                      .endsAt -
-                      now
-                  )
-                )}
-              </strong>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="panel">
-              <h3>
-                OYUNCU SEÇ
-              </h3>
-
-              <p className="muted">
-                Aktif 10 kişilik
-                kadrodaki oyuncular
-                antrenmana gönderilemez.
-              </p>
-            </div>
-
-            <div className="card-grid">
-              {ownedPlayers.map(
-                (player) => {
-                  const check =
-                    canSendToTraining(
-                      game,
-                      player,
-                      stageCap
-                    );
-
-                  return (
-                    <div
-                      key={
-                        player.id
-                      }
-                    >
-                      <PlayerCard
-                        player={
-                          player
-                        }
-                        compact
-                        selected={
-                          trainingPlayerId ===
-                          player.id
-                        }
-                        status={
-                          check.allowed
-                            ? ""
-                            : check.message
-                        }
-                        onClick={
-                          check.allowed
-                            ? () =>
-                                setTrainingPlayerId(
-                                  player.id
-                                )
-                            : undefined
-                        }
-                      />
-                    </div>
-                  );
-                }
-              )}
-            </div>
-
-            {trainingPlayerId &&
-              (() => {
-                const player =
-                  getPlayerById(
-                    game,
-                    trainingPlayerId
-                  );
-
-                const full =
-                  getFullTrainingForPlayer(
-                    game,
-                    player,
-                    stageCap
-                  );
-
-                return (
-                  <div
-                    className="panel"
-                    style={{
-                      marginTop:
-                        16,
-                    }}
-                  >
-                    <h2>
-                      {player.name}
-                    </h2>
-
-                    <div className="two-col">
-                      <div>
-                        <h3>
-                          NORMAL
-                        </h3>
-
-                        <div className="form-grid">
-                          {trainingPlans.map(
-                            (
-                              plan
-                            ) => {
-                              const cost =
-                                calculateTrainingCost(
-                                  plan,
-                                  player.overall
-                                );
-
-                              return (
-                                <button
-                                  key={
-                                    plan.id ||
-                                    plan.gain
-                                  }
-                                  className="secondary-button"
-                                  onClick={() =>
-                                    startTraining(
-                                      player,
-                                      plan
-                                    )
-                                  }
-                                >
-                                  +
-                                  {
-                                    plan.gain
-                                  }{" "}
-                                  GEN •{" "}
-                                  {
-                                    plan.hours
-                                  }{" "}
-                                  SAAT • 🪙{" "}
-                                  {money(
-                                    cost
-                                  )}
-                                </button>
-                              );
-                            }
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <h3>
-                          🔥 FULL ANTRENMAN
-                        </h3>
-
-                        <p className="muted">
-                          Oyuncuyu mevcut
-                          aşama sınırına
-                          kadar tek seferde
-                          geliştirir. Süre
-                          maksimum 24 saat.
-                        </p>
-
-                        <button
-                          className="gold-button"
-                          disabled={
-                            !full.allowed
-                          }
-                          onClick={() =>
-                            startFullTraining(
-                              player
-                            )
-                          }
-                        >
-                          {full.allowed
-                            ? `+${full.gain} GEN • ${full.hours} SAAT • 🪙 ${money(
-                                full.cost
-                              )}`
-                            : full.message}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-          </>
-        )}
-      </section>
-    );
-  }
-
-  /* ---------------- COLLECTION ---------------- */
-
-  if (
-    screen ===
-    "collection"
-  ) {
-    content = (
-      <section className="screen">
-        <BackButton
-          onClick={goHome}
-        />
-
-        <SectionHeader
-          eyebrow="TAKIMIM"
-          title={`KOLEKSİYON • ${game.collection.length}`}
-        />
-
-        <div className="card-grid">
-          {[...game.collection]
-            .sort(
-              (a, b) =>
-                b.overall -
-                a.overall
-            )
-            .map(
-              (player) => (
-                <PlayerCard
-                  key={
-                    player.id
-                  }
-                  player={
-                    player
-                  }
-                  status={
-                    getPlayerStatus(
-                      player,
-                      game
-                    )
-                  }
-                />
-              )
-            )}
-        </div>
-      </section>
-    );
-  }
-
-  /* ---------------- COACHES ---------------- */
-
-  if (
-    screen === "coaches"
-  ) {
-    const selectedCoach =
-      COACHES.find(
-        (coach) =>
-          coach.id ===
-          selectedCoachId
+  if (screen === "training") {
+    const trainingSessions =
+      getTrainingSessions(
+        game
       );
 
     content = (
@@ -5061,196 +5672,225 @@ function App() {
 
         <SectionHeader
           eyebrow="TAKIMIM"
-          title="ANTRENÖRLER"
+          title="ANTRENMAN"
+          right={
+            <StatChip>
+              🏋️ {trainingSessions.length} AKTİF
+            </StatChip>
+          }
         />
 
-        <div className="coach-grid">
-          {COACHES.map(
-            (coach) => {
-              const owned =
-                game.coaches
-                  .owned
-                  .includes(
-                    coach.id
+        {trainingSessions.length > 0 && (
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            {trainingSessions.map(
+              (session) => {
+                const player =
+                  getPlayerById(
+                    game,
+                    session.playerId
                   );
 
-              return (
-                <div
-                  className="coach-card"
-                  key={
-                    coach.id
-                  }
-                >
+                if (!player) {
+                  return null;
+                }
+
+                const speedCost =
+                  getTrainingSpeedUpCost(
+                    session
+                  );
+
+                return (
                   <div
-                    style={{
-                      fontSize:
-                        22,
-                    }}
+                    className="panel"
+                    key={
+                      session.id ||
+                      session.playerId
+                    }
                   >
-                    {"⭐".repeat(
-                      coach.stars
-                    )}
+                    <div className="training-running">
+                      <div>
+                        <div className="section-eyebrow">
+                          ANTRENMAN DEVAM EDİYOR
+                        </div>
+                        <h2>
+                          {player.name}
+                        </h2>
+                        <div className="muted">
+                          +{session.gain} GEN
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          textAlign: "right",
+                        }}
+                      >
+                        <strong>
+                          {millisecondsToClock(
+                            Math.max(
+                              0,
+                              session.endsAt - now
+                            )
+                          )}
+                        </strong>
+
+                        <button
+                          className="gold-button"
+                          style={{
+                            display: "block",
+                            marginTop: 8,
+                          }}
+                          onClick={() =>
+                            speedUpTraining(
+                              session
+                            )
+                          }
+                        >
+                          ⚡ HIZLANDIR • 🪙{money(speedCost)}
+                        </button>
+                      </div>
+                    </div>
                   </div>
+                );
+              }
+            )}
+          </div>
+        )}
 
-                  <h3>
-                    {coach.name}
-                  </h3>
+        <div className="panel">
+          <h3>OYUNCU SEÇ</h3>
+          <p className="muted">
+            Aynı anda birden fazla oyuncuyu antrenmana gönderebilirsin. Aktif 10 kişilik kadrodaki oyuncular gönderilemez.
+          </p>
+        </div>
 
-                  <p className="muted">
-                    {
-                      coach.slots
-                    }{" "}
-                    oyuncu •{" "}
-                    {
-                      coach.minutes
-                    }{" "}
-                    dk
-                  </p>
+        <div className="card-grid">
+          {ownedPlayers.map(
+            (player) => {
+              const check =
+                canSendToTraining(
+                  game,
+                  player,
+                  stageCap
+                );
 
-                  {owned ? (
-                    <button
-                      className="primary-button"
-                      onClick={() =>
-                        setSelectedCoachId(
-                          coach.id
-                        )
-                      }
-                    >
-                      SEÇ
-                    </button>
-                  ) : (
-                    <button
-                      className="gold-button"
-                      onClick={() =>
-                        buyCoach(
-                          coach
-                        )
-                      }
-                    >
-                      🪙{" "}
-                      {money(
-                        coach.price
-                      )}
-                    </button>
-                  )}
+              return (
+                <div key={player.id}>
+                  <PlayerCard
+                    player={player}
+                    compact
+                    selected={
+                      trainingPlayerId ===
+                      player.id
+                    }
+                    status={
+                      check.allowed
+                        ? ""
+                        : check.message
+                    }
+                    onClick={
+                      check.allowed
+                        ? () =>
+                            setTrainingPlayerId(
+                              player.id
+                            )
+                        : undefined
+                    }
+                  />
                 </div>
               );
             }
           )}
         </div>
 
-        {selectedCoach && (
-          <div
-            className="panel"
-            style={{
-              marginTop: 16,
-            }}
-          >
-            <h2>
-              {
-                selectedCoach.name
-              }
-            </h2>
+        {trainingPlayerId &&
+          (() => {
+            const player =
+              getPlayerById(
+                game,
+                trainingPlayerId
+              );
 
-            <p className="muted">
-              En fazla{" "}
-              {
-                selectedCoach.slots
-              }{" "}
-              oyuncu seç.
-              Kadrodaki oyuncular
-              kilitlidir.
-            </p>
+            if (!player) {
+              return null;
+            }
 
-            <div className="card-grid">
-              {ownedPlayers.map(
-                (player) => {
-                  const check =
-                    canSendToCoach(
-                      game,
-                      player,
-                      stageCap
-                    );
+            const full =
+              getFullTrainingForPlayer(
+                game,
+                player,
+                stageCap
+              );
 
-                  const selected =
-                    coachPlayerIds.includes(
-                      player.id
-                    );
+            return (
+              <div
+                className="panel"
+                style={{
+                  marginTop: 16,
+                }}
+              >
+                <h2>{player.name}</h2>
 
-                  return (
-                    <PlayerCard
-                      key={
-                        player.id
+                <div className="two-col">
+                  <div>
+                    <h3>NORMAL</h3>
+                    <div className="form-grid">
+                      {trainingPlans.map(
+                        (plan) => {
+                          const cost =
+                            calculateTrainingCost(
+                              plan,
+                              player.overall
+                            );
+
+                          return (
+                            <button
+                              key={
+                                plan.id ||
+                                plan.gain
+                              }
+                              className="secondary-button"
+                              onClick={() =>
+                                startTraining(
+                                  player,
+                                  plan
+                                )
+                              }
+                            >
+                              +{plan.gain} GEN • {plan.hours} SAAT • 🪙{money(cost)}
+                            </button>
+                          );
+                        }
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3>FULL</h3>
+                    <button
+                      className="gold-button"
+                      disabled={!full.allowed}
+                      onClick={() =>
+                        startFullTraining(
+                          player
+                        )
                       }
-                      player={
-                        player
-                      }
-                      compact
-                      selected={
-                        selected
-                      }
-                      status={
-                        check.allowed
-                          ? ""
-                          : check.message
-                      }
-                      onClick={
-                        !check.allowed
-                          ? undefined
-                          : () => {
-                              setCoachPlayerIds(
-                                (
-                                  old
-                                ) => {
-                                  if (
-                                    old.includes(
-                                      player.id
-                                    )
-                                  ) {
-                                    return old.filter(
-                                      (
-                                        id
-                                      ) =>
-                                        id !==
-                                        player.id
-                                    );
-                                  }
-
-                                  if (
-                                    old.length >=
-                                    selectedCoach.slots
-                                  ) {
-                                    return old;
-                                  }
-
-                                  return [
-                                    ...old,
-                                    player.id,
-                                  ];
-                                }
-                              );
-                            }
-                      }
-                    />
-                  );
-                }
-              )}
-            </div>
-
-            <button
-              className="primary-button"
-              style={{
-                marginTop: 14,
-              }}
-              onClick={
-                startCoachSession
-              }
-            >
-              ANTRENÖR ÇALIŞMASINI
-              BAŞLAT
-            </button>
-          </div>
-        )}
+                    >
+                      {full.allowed
+                        ? `+${full.gain} GEN • ${full.hours} SAAT • 🪙${money(full.cost)}`
+                        : full.message}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
       </section>
     );
   }
@@ -5779,6 +6419,23 @@ function App() {
                         }
                       />
 
+                      {rental && (
+                        <button
+                          className="danger-button"
+                          style={{
+                            width: "100%",
+                            marginTop: 6,
+                          }}
+                          onClick={() =>
+                            recallRental(
+                              rental
+                            )
+                          }
+                        >
+                          ↩️ GERİ ÇAĞIR
+                        </button>
+                      )}
+
                       {!rental &&
                         check.allowed && (
                           <button
@@ -5996,14 +6653,7 @@ function App() {
         activeEvent.id
       ];
 
-    const cooldown =
-      Math.max(
-        0,
-        Number(
-          state?.nextMatchAt ||
-            0
-        ) - now
-      );
+    const cooldown = 0;
 
     content = (
       <section className="screen">
@@ -6073,8 +6723,7 @@ function App() {
               marginTop: 12,
             }}
             disabled={
-              state?.completed ||
-              cooldown > 0
+              state?.completed
             }
             onClick={() =>
               createBattle(
@@ -6147,6 +6796,70 @@ function App() {
   }
 
   /* ---------------- MISSIONS ---------------- */
+
+  /* ---------------- CHANCE POOL ---------------- */
+
+  if (screen === "chance-pool") {
+    const chance = getChancePoolSummary(game.chancePool, now);
+    const remainingMs = Math.max(0, chance.resetsAt - now);
+    const days = Math.floor(remainingMs / 86400000);
+    const hours = Math.floor((remainingMs % 86400000) / 3600000);
+    const minutes = Math.floor((remainingMs % 3600000) / 60000);
+
+    content = (
+      <section className="screen">
+        <BackButton onClick={goHome} />
+        <SectionHeader eyebrow="3 GÜNLÜK ÖZEL HAVUZ" title="🎰 ŞANS HAVUZU" />
+
+        <div className="mission-card">
+          <div className="section-eyebrow">HAVUZ DURUMU</div>
+          <h2>{chance.remaining} / {chance.total}</h2>
+          <p className="muted">Yenilenme: {days}g {hours}s {minutes}dk</p>
+          <div className="status-box" style={{ marginTop: 12 }}>
+            <div>🔥 Şans Seviyesi {chance.level}</div>
+            <div>🪙 {money(chance.levelCurrent)} / {money(chance.levelRequired)} Coin</div>
+          </div>
+          <div className="progress-track" style={{ marginTop: 10 }}>
+            <div className="progress-fill" style={{ width: `${Math.min(100, (chance.levelCurrent / chance.levelRequired) * 100)}%` }} />
+          </div>
+        </div>
+
+        <div className="mission-card">
+          <strong>KALAN ÖZEL KARTLAR</strong>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginTop:12 }}>
+            <StatChip>👑 {chance.rarities.icon} İkon</StatChip>
+            <StatChip>🔥 {chance.rarities.legendary} Efsanevi</StatChip>
+            <StatChip>💜 {chance.rarities.epic} Epik</StatChip>
+            <StatChip>💎 {chance.rarities.platinum} Platin</StatChip>
+            <StatChip>🟨 {chance.rarities.gold} Altın</StatChip>
+            <StatChip>🔵 {chance.rarities.rare} Nadir</StatChip>
+            <StatChip>⚪ {chance.rarities.common} Sıradan</StatChip>
+          </div>
+        </div>
+
+        <div className="mission-card">
+          <h2>TEK ÇEKİM • 🪙 500</h2>
+          <p className="muted">Çıkan oyuncu anında koleksiyonuna eklenir ve bu 3 günlük havuzdan kalıcı olarak eksilir.</p>
+          <div className="folder-buttons" style={{ marginTop: 12 }}>
+            <button className="gold-button" onClick={drawFromChancePool} disabled={game.coins < CHANCE_DRAW_COST || chance.remaining <= 0}>🎰 1 OYUNCU ÇEK</button>
+            <button onClick={() => autoDrawFromChancePool("until-gold")} disabled={game.coins < CHANCE_DRAW_COST || chance.remaining <= 0}>🟨 ALTIN+ ÇIKINCA DUR</button>
+            <button onClick={() => autoDrawFromChancePool("until-empty-coins")} disabled={game.coins < CHANCE_DRAW_COST || chance.remaining <= 0}>⚡ PARAM BİTENE KADAR</button>
+          </div>
+        </div>
+
+        {chance.pool.history?.length > 0 && (
+          <div className="mission-card">
+            <strong>SON ÇEKİMLER</strong>
+            <div className="status-box" style={{ marginTop: 10 }}>
+              {chance.pool.history.slice(0, 8).map((item, index) => (
+                <div key={`${item.id}-${index}`}>{item.name} • {item.overall} GEN • {String(item.rarity).toUpperCase()}</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+    );
+  }
 
   if (
     screen === "missions"
@@ -6450,6 +7163,16 @@ function App() {
                   squadAverage
                 )}{" "}
                 GEN
+              </div>
+
+              <div>
+                Oyunda Geçirilen Süre:{" "}
+                <strong>
+                  {formatPlayTime(
+                    game.playTimeSeconds ||
+                      0
+                  )}
+                </strong>
               </div>
             </div>
           </div>

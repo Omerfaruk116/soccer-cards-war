@@ -10,6 +10,7 @@ import {
 } from "react-dom/client";
 
 import App from "./App.jsx";
+import GameBoot from "./components/GameBoot.jsx";
 
 import "./index.css";
 import "./mobile.css";
@@ -861,11 +862,56 @@ function AchievementPanel({
     return null;
   }
 
-  const completed =
-    achievements.filter(
-      (item) =>
-        item.completed
-    ).length;
+  const completed = achievements.filter(
+    (item) => item.completed
+  ).length;
+
+  const categoryOrder = [
+    "ANTRENMAN",
+    "TRANSFER",
+    "KOLEKSİYON",
+    "GEN",
+    "OYUNCU OLUŞTUR",
+    "KARİYER",
+    "ETKİNLİK",
+    "COIN",
+    "GÜNLÜK",
+    "KİRALIK",
+    "ANTRENÖR",
+    "AŞAMA",
+    "EL TURCO",
+  ];
+
+  const grouped = categoryOrder
+    .map((category) => ({
+      category,
+      items: achievements.filter(
+        (item) => item.category === category
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  const knownCategories = new Set(categoryOrder);
+  const extraCategories = [];
+
+  achievements.forEach((item) => {
+    if (
+      item?.category &&
+      !knownCategories.has(item.category) &&
+      !extraCategories.includes(item.category)
+    ) {
+      extraCategories.push(item.category);
+    }
+  });
+
+  extraCategories.forEach((category) => {
+    grouped.push({
+      category,
+      items: achievements.filter(
+        (item) => item.category === category
+      ),
+    });
+  });
 
   return (
     <div className="achievement-overlay">
@@ -876,13 +922,10 @@ function AchievementPanel({
               SOCCER CARDS WAR
             </div>
 
-            <h2>
-              🏆 BAŞARIMLAR
-            </h2>
+            <h2>🏆 BAŞARIMLAR</h2>
 
             <p>
-              {completed}/
-              {achievements.length}{" "}
+              {completed}/{achievements.length}{" "}
               tamamlandı
             </p>
           </div>
@@ -900,60 +943,74 @@ function AchievementPanel({
           <div
             className="achievement-progress-fill"
             style={{
-              width:
-                `${
-                  achievements.length
-                    ? Math.round(
-                        (completed /
-                          achievements.length) *
-                          100
-                      )
-                    : 0
-                }%`,
+              width: `${
+                achievements.length
+                  ? Math.round(
+                      (completed / achievements.length) * 100
+                    )
+                  : 0
+              }%`,
             }}
           />
         </div>
 
-        <div className="achievement-grid">
-          {achievements.map(
-            (item) => (
+        {grouped.map((group) => {
+          const groupCompleted = group.items.filter(
+            (item) => item.completed
+          ).length;
+
+          return (
+            <section
+              key={group.category}
+              style={{ marginTop: 24 }}
+            >
               <div
-                key={
-                  item.id
-                }
-                className={`achievement-item ${
-                  item.completed
-                    ? "achievement-completed"
-                    : ""
-                }`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 12,
+                }}
               >
-                <div className="achievement-icon">
-                  {item.completed
-                    ? "🏆"
-                    : "🔒"}
-                </div>
+                <h3 style={{ margin: 0 }}>
+                  {group.category}
+                </h3>
 
-                <div>
-                  <div className="achievement-category">
-                    {
-                      item.category
-                    }
-                  </div>
-
-                  <strong>
-                    {item.title}
-                  </strong>
-
-                  <p>
-                    {
-                      item.description
-                    }
-                  </p>
-                </div>
+                <span className="achievement-category">
+                  {groupCompleted}/{group.items.length}
+                </span>
               </div>
-            )
-          )}
-        </div>
+
+              <div className="achievement-grid">
+                {group.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`achievement-item ${
+                      item.completed
+                        ? "achievement-completed"
+                        : ""
+                    }`}
+                  >
+                    <div className="achievement-icon">
+                      {item.completed ? "🏆" : "🔒"}
+                    </div>
+
+                    <div>
+                      <div className="achievement-category">
+                        {item.category}
+                      </div>
+
+                      <strong>{item.title}</strong>
+
+                      <p>{item.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
@@ -1582,6 +1639,8 @@ createRoot(
   )
 ).render(
   <StrictMode>
-    <Root />
+    <GameBoot>
+      <Root />
+    </GameBoot>
   </StrictMode>
 );
