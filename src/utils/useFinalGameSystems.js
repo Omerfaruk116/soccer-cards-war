@@ -4,10 +4,10 @@ import {
 } from "react";
 
 import {
+  FINAL_SAVE_KEY,
+  PREVIOUS_SAVE_KEYS,
   advanceStageIfReady,
   createToast,
-  FINAL_SAVE_KEY,
-  FINAL_SAVE_VERSION,
   getCareerScreenData,
   getEventScreenData,
   getHomeFinalData,
@@ -15,50 +15,44 @@ import {
   getMissionScreenData,
   getStageProgressStatus,
   normalizeFinalSystems,
-  PREVIOUS_SAVE_KEYS,
   shouldRemoveToast,
   updateMarketSystem,
 } from "./finalGameSystems";
 
 /* =========================================================
    SAVE OKU
-
-   Önce v6 aranır.
-   Yoksa v5 → v4 → v3 → v2 sırasıyla aranır.
 ========================================================= */
 
 export function readFinalSave() {
-  try {
-    const current =
-      localStorage.getItem(
-        FINAL_SAVE_KEY
-      );
+  const keys = [
+    FINAL_SAVE_KEY,
+    ...PREVIOUS_SAVE_KEYS,
+  ];
 
-    if (current) {
-      return normalizeFinalSystems(
-        JSON.parse(current)
-      );
-    }
-
-    for (
-      const key of
-        PREVIOUS_SAVE_KEYS
-    ) {
-      const old =
+  for (const key of keys) {
+    try {
+      const raw =
         localStorage.getItem(
           key
         );
 
-      if (!old) {
+      if (!raw) {
         continue;
       }
 
-      return normalizeFinalSystems(
-        JSON.parse(old)
-      );
+      const parsed =
+        JSON.parse(raw);
+
+      if (
+        parsed &&
+        typeof parsed ===
+          "object"
+      ) {
+        return parsed;
+      }
+    } catch {
+      // Bozuk save atlanır.
     }
-  } catch {
-    return null;
   }
 
   return null;
@@ -72,7 +66,7 @@ export function writeFinalSave(
   game
 ) {
   if (!game) {
-    return;
+    return false;
   }
 
   try {
@@ -80,35 +74,52 @@ export function writeFinalSave(
       FINAL_SAVE_KEY,
       JSON.stringify({
         ...game,
-
-        saveVersion:
-          FINAL_SAVE_VERSION,
+        saveVersion: 6,
       })
     );
+
+    return true;
   } catch {
-    // localStorage dolu/kapalıysa
-    // oyun çökmeyecek.
+    return false;
   }
 }
 
 /* =========================================================
-   ANA HOOK
+   EKRANI MAIN.JSX'E BİLDİR
+========================================================= */
 
-   App.jsx şunları otomatik kazanacak:
+export function publishCurrentScreen(
+  screen,
+  battle = null
+) {
+  const value =
+    battle
+      ? "battle"
+      : screen || "home";
 
-   - v6 save
-   - market auto refresh
-   - shared stage advance
-   - toast auto hide
-   - Home mission data
-   - Career fixture data
-   - Event preview data
+  document.body.dataset.scwScreen =
+    value;
+
+  window.dispatchEvent(
+    new CustomEvent(
+      "scw-screen-change",
+      {
+        detail: {
+          screen: value,
+        },
+      }
+    )
+  );
+}
+
+/* =========================================================
+   FINAL SİSTEM HOOK'U
 ========================================================= */
 
 export function useFinalGameSystems({
   game,
   setGame,
-  now,
+  now = Date.now(),
   activeEventId,
   toast,
   setToast,
@@ -128,10 +139,143 @@ export function useFinalGameSystems({
   }, [game]);
 
   /* =======================================================
-     MARKET AUTO REFRESH
+     OYUNDA GEÇİRİLEN SÜRE
+  ======================================================= */
 
-     Her saniye render olsa bile state
-     yalnızca gerçekten market zamanı dolunca değişir.
+  useEffect(() => {
+    let lastTick =
+      Date.now();
+
+    function tickPlayTime() {
+      const current =
+        Date.now();
+
+      if (
+        document.visibilityState !==
+        "visible"
+      ) {
+        lastTick = current;
+        return;
+      }
+
+      const elapsedSeconds =
+        Math.floor(
+          (current - lastTick) /
+            1000
+        );
+
+      if (
+        elapsedSeconds < 1
+      ) {
+        return;
+      }
+
+      lastTick +=
+        elapsedSeconds * 1000;
+
+      setGame(
+        (previous) => {
+          if (!previous) {
+            return previous;
+          }
+
+          const oldValue =
+            Number(
+              previous.playTimeSeconds ??
+                previous.playTime ??
+                previous.stats
+                  ?.playTimeSeconds ??
+                previous.stats
+                  ?.playTime ??
+                0
+            ) || 0;
+
+          return {
+            ...previous,
+
+            playTimeSeconds:
+              oldValue +
+              elapsedSeconds,
+          };
+        }
+      );
+    }
+
+    function handleVisibilityChange() {
+      lastTick =
+        Date.now();
+    }
+
+    const timer =
+      window.setInterval(
+        tickPlayTime,
+        1000
+      );
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    return () => {
+      window.clearInterval(
+        timer
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+    };
+  }, [setGame]);
+
+  /* =======================================================
+     ESKİ SAVE'DEKİ PLAYTIME'I YENİ ALANA TAŞI
+  ======================================================= */
+
+  useEffect(() => {
+    setGame(
+      (previous) => {
+        if (!previous) {
+          return previous;
+        }
+
+        if (
+          Number.isFinite(
+            Number(
+              previous.playTimeSeconds
+            )
+          )
+        ) {
+          return previous;
+        }
+
+        const legacy =
+          Number(
+            previous.playTime ??
+              previous.stats
+                ?.playTimeSeconds ??
+              previous.stats
+                ?.playTime ??
+              0
+          ) || 0;
+
+        return {
+          ...previous,
+          playTimeSeconds:
+            Math.max(
+              0,
+              Math.floor(
+                legacy
+              )
+            ),
+        };
+      }
+    );
+  }, [setGame]);
+
+  /* =======================================================
+     MARKET OTOMATİK YENİLEME
   ======================================================= */
 
   useEffect(() => {
@@ -145,31 +289,21 @@ export function useFinalGameSystems({
         now
       );
 
-    if (!result.refreshed) {
-      return;
+    if (
+      result.refreshed
+    ) {
+      setGame(
+        result.game
+      );
     }
-
-    setGame(
-      result.game
-    );
-
-    setToast(
-      createToast(
-        "🔄 Transfer pazarı yenilendi.",
-        "info"
-      )
-    );
   }, [
     now,
-    game,
-    setGame,
-    setToast,
+    game?.marketSystem
+      ?.nextRefreshAt,
   ]);
 
   /* =======================================================
-     CAREER + EVENT = YENİ AŞAMA
-
-     İkisi de bitmeden stage ilerlemez.
+     AŞAMA OTOMATİK İLERLEME
   ======================================================= */
 
   useEffect(() => {
@@ -182,29 +316,23 @@ export function useFinalGameSystems({
         game
       );
 
-    if (!result.advanced) {
-      return;
+    if (
+      result.advanced
+    ) {
+      setGame(
+        result.game
+      );
     }
-
-    setGame(
-      result.game
-    );
-
-    setToast(
-      createToast(
-        `🏆 AŞAMA ${result.game.activeStage} AÇILDI!`,
-        "success",
-        2400
-      )
-    );
   }, [
-    game,
-    setGame,
-    setToast,
+    game?.activeStage,
+    game?.careerFixtures,
+    game?.career
+      ?.completedStages,
+    game?.events,
   ]);
 
   /* =======================================================
-     TOAST OTOMATİK KAPANIR
+     TOAST
   ======================================================= */
 
   useEffect(() => {
@@ -212,81 +340,121 @@ export function useFinalGameSystems({
       return;
     }
 
-    const elapsed =
-      Date.now() -
-      Number(
-        toast.createdAt ||
-          0
-      );
-
     const remaining =
       Math.max(
         0,
         Number(
           toast.duration ||
             1800
-        ) - elapsed
+        ) -
+          (Date.now() -
+            Number(
+              toast.createdAt ||
+                Date.now()
+            ))
       );
 
     const timer =
       window.setTimeout(
         () => {
-          setToast(null);
+          setToast(
+            (current) => {
+              if (
+                !current ||
+                current.id !==
+                  toast.id
+              ) {
+                return current;
+              }
+
+              return null;
+            }
+          );
         },
         remaining
       );
 
-    return () => {
+    return () =>
       window.clearTimeout(
         timer
       );
-    };
   }, [
     toast,
     setToast,
   ]);
 
+  useEffect(() => {
+    if (
+      toast &&
+      shouldRemoveToast(
+        toast,
+        now
+      )
+    ) {
+      setToast(null);
+    }
+  }, [
+    now,
+    toast,
+    setToast,
+  ]);
+
+  function showToast(
+    message,
+    type = "info",
+    duration = 1800
+  ) {
+    setToast(
+      createToast(
+        message,
+        type,
+        duration
+      )
+    );
+  }
+
   /* =======================================================
-     TÜRETİLEN VERİLER
+     TÜRETİLEN EKRAN VERİLERİ
   ======================================================= */
+
+  const normalizedGame =
+    useMemo(
+      () =>
+        normalizeFinalSystems(
+          game || {},
+          now
+        ),
+      [game, now]
+    );
 
   const homeData =
     useMemo(
       () =>
-        game
-          ? getHomeFinalData(
-              game,
-              now
-            )
-          : null,
-      [
-        game,
-        now,
-      ]
+        getHomeFinalData(
+          normalizedGame,
+          now
+        ),
+      [normalizedGame, now]
     );
 
   const careerData =
     useMemo(
       () =>
-        game
-          ? getCareerScreenData(
-              game
-            )
-          : null,
-      [game]
+        getCareerScreenData(
+          normalizedGame
+        ),
+      [normalizedGame]
     );
 
   const eventData =
     useMemo(
       () =>
-        game
-          ? getEventScreenData(
-              game,
-              activeEventId
-            )
-          : null,
+        getEventScreenData(
+          normalizedGame,
+          activeEventId
+        ),
       [
-        game,
+        normalizedGame,
         activeEventId,
       ]
     );
@@ -294,41 +462,35 @@ export function useFinalGameSystems({
   const marketData =
     useMemo(
       () =>
-        game
-          ? getMarketScreenData(
-              game,
-              now
-            )
-          : null,
-      [
-        game,
-        now,
-      ]
+        getMarketScreenData(
+          normalizedGame,
+          now
+        ),
+      [normalizedGame, now]
     );
 
   const missionData =
     useMemo(
       () =>
-        game
-          ? getMissionScreenData(
-              game
-            )
-          : null,
-      [game]
+        getMissionScreenData(
+          normalizedGame
+        ),
+      [normalizedGame]
     );
 
   const stageStatus =
     useMemo(
       () =>
-        game
-          ? getStageProgressStatus(
-              game
-            )
-          : null,
-      [game]
+        getStageProgressStatus(
+          normalizedGame
+        ),
+      [normalizedGame]
     );
 
   return {
+    game:
+      normalizedGame,
+
     homeData,
     careerData,
     eventData,
@@ -336,69 +498,6 @@ export function useFinalGameSystems({
     missionData,
     stageStatus,
 
-    showToast(
-      message,
-      type = "info",
-      duration = 1800
-    ) {
-      setToast(
-        createToast(
-          message,
-          type,
-          duration
-        )
-      );
-    },
-
-    clearToast() {
-      setToast(null);
-    },
-
-    isToastExpired() {
-      return shouldRemoveToast(
-        toast
-      );
-    },
+    showToast,
   };
-}
-
-/* =========================================================
-   EKRAN BRIDGE
-
-   main.jsx içindeki BAŞARIMLAR kartının
-   yalnızca HOME'da görünmesi için.
-
-   App her ekran değişiminde bunu çağıracak.
-========================================================= */
-
-export function publishCurrentScreen(
-  screen,
-  battle = null
-) {
-  if (
-    typeof document ===
-    "undefined"
-  ) {
-    return;
-  }
-
-  const actualScreen =
-    battle
-      ? "battle"
-      : screen || "home";
-
-  document.body.dataset.scwScreen =
-    actualScreen;
-
-  window.dispatchEvent(
-    new CustomEvent(
-      "scw-screen-change",
-      {
-        detail: {
-          screen:
-            actualScreen,
-        },
-      }
-    )
-  );
 }
