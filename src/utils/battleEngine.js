@@ -328,7 +328,7 @@ export function calculateCareerTargetOverall({
     Math.max(
       1,
       Math.min(
-        10,
+        11,
         Number(stage) || 1
       )
     );
@@ -390,6 +390,11 @@ export function calculateCareerTargetOverall({
 
     10: {
       min: 90,
+      max: 97,
+    },
+
+    11: {
+      min: 96,
       max: 99,
     },
   };

@@ -158,7 +158,7 @@ export function normalizeFinalSystems(
 
   const activeStage =
     Math.min(
-      10,
+      11,
       Math.max(
         1,
         Number(
@@ -509,7 +509,7 @@ export function getStageProgressStatus(
     bothDone,
 
     nextStage:
-      stage < 10
+      stage < 11
         ? stage + 1
         : null,
 
@@ -539,7 +539,7 @@ export function advanceStageIfReady(
 
   if (
     !status.bothDone ||
-    status.stage >= 10
+    status.stage >= 11
   ) {
     return {
       advanced: false,

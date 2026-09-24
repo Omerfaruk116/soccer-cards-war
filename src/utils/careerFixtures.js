@@ -113,7 +113,7 @@ export function createCareerFixtureBook() {
 
   for (
     let stage = 1;
-    stage <= 10;
+    stage <= 11;
     stage += 1
   ) {
     fixtures[stage] =
@@ -141,7 +141,7 @@ export function ensureCareerFixtures(
 
   for (
     let stage = 1;
-    stage <= 10;
+    stage <= 11;
     stage += 1
   ) {
     const existing =

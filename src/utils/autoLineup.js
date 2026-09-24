@@ -178,10 +178,15 @@ function isPlayerAvailable(
         0
     );
 
-  if (
-    overall > stageCap &&
-    overall !== 100
-  ) {
+  const specialCapExempt = Boolean(
+    player.chancePoolReward ||
+    player.nationalTeamReward ||
+    player.realPlayer ||
+    player.rarity === "elturco" ||
+    overall === 100
+  );
+
+  if (overall > stageCap && !specialCapExempt) {
     return false;
   }
 

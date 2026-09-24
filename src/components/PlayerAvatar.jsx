@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -58,6 +59,22 @@ export default function PlayerAvatar({
 
   const [failedLayers, setFailedLayers] =
     useState({});
+
+  const [realPhoto, setRealPhoto] = useState(player?.photo || "");
+
+  useEffect(() => {
+    let alive = true;
+    setRealPhoto(player?.photo || "");
+    if (!player?.realPlayer || player?.photo || !player?.wikiTitle) return () => { alive = false; };
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(player.wikiTitle)}`;
+    fetch(url)
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (alive && data?.thumbnail?.source) setRealPhoto(data.thumbnail.source);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [player?.id, player?.realPlayer, player?.photo, player?.wikiTitle]);
 
   /* =======================================================
      PATHS
@@ -196,6 +213,16 @@ export default function PlayerAvatar({
         playerName
       }
     >
+      {player?.realPlayer && realPhoto && (
+        <img
+          src={realPhoto}
+          alt={player?.name || "Gerçek futbolcu"}
+          draggable="false"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", objectPosition:"center top", zIndex:20 }}
+          onError={() => setRealPhoto("")}
+        />
+      )}
+
       {/* ================================================
           BACKGROUND
       ================================================= */}

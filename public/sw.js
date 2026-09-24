@@ -1,5 +1,5 @@
 const CACHE_NAME =
-  "scw-v5-final-2026-09-23";
+  "scw-v6-release-2026-09-24";
 
 const BASE_PATH =
   "/soccer-cards-war/";

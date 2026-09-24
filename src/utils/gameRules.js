@@ -13,7 +13,7 @@ const DEFAULT_STAGE_CAP = 99;
 
 export function getStageCap(stage) {
   const safeStage = Math.min(
-    10,
+    11,
     Math.max(
       1,
       Number(stage) || 1
@@ -30,7 +30,8 @@ export function getStageCap(stage) {
     7: 80,
     8: 85,
     9: 90,
-    10: 99,
+    10: 95,
+    11: 99,
   };
 
   return (

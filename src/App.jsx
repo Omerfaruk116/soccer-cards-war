@@ -110,6 +110,14 @@ import {
   normalizeChancePool,
 } from "./utils/chancePool";
 
+
+import {
+  NATIONAL_MATCH_WINS,
+  getNationalTeam,
+  makeNationalReward,
+  nationalTeams,
+} from "./data/nationalTeams";
+
 const INSTALL_PROMPT_KEY = "__scwInstallPrompt";
 const INSTALL_CAPTURE_KEY = "__scwInstallCaptureReady";
 
@@ -397,6 +405,8 @@ function createNewGame() {
       gen2: 0,
       gen4: 0,
     },
+
+    nationalTeams: { progress: {}, rewards: [] },
 
     career: {
       match: 1,
@@ -755,6 +765,11 @@ function normalizeAppState(game = {}) {
         normalized.chancePool
       ),
 
+    nationalTeams: {
+      progress: normalized.nationalTeams?.progress || {},
+      rewards: Array.isArray(normalized.nationalTeams?.rewards) ? normalized.nationalTeams.rewards : [],
+    },
+
     coaches: {
       ...(normalized.coaches ||
         {}),
@@ -827,6 +842,37 @@ function sortPlayersStrongestFirst(
     .sort(
       comparePlayersStrongestFirst
     );
+}
+
+function applyPlayerFilter(players = [], filter = {}) {
+  const filtered = (players || []).filter((player) => {
+    if (!player) return false;
+    if (filter.group && filter.group !== "all" && getPositionGroup(player.position) !== filter.group) return false;
+    if (filter.rarity && filter.rarity !== "all" && (player.rarity || getRarity(player.overall)) !== filter.rarity) return false;
+    if (filter.country && filter.country !== "all" && player.country !== filter.country) return false;
+    if (filter.nationalOnly && !player.nationalTeamReward) return false;
+    return true;
+  });
+  return [...filtered].sort((a,b) => {
+    const realDiff = Number(Boolean(b.nationalTeamReward)) - Number(Boolean(a.nationalTeamReward));
+    return realDiff || comparePlayersStrongestFirst(a,b);
+  });
+}
+
+function FilterBar({ open, setOpen, filter, setFilter, resultCount }) {
+  const update = (key, value) => setFilter((prev) => ({...prev,[key]:value}));
+  return (
+    <div className="panel scw-filter-panel" style={{marginBottom:14}}>
+      <button type="button" className="secondary-button" onClick={() => setOpen(!open)}>🔎 FİLTRELE • {resultCount}</button>
+      {open && <div className="scw-filter-grid" style={{marginTop:12}}>
+        <select value={filter.group} onChange={(e)=>update("group",e.target.value)}><option value="all">Tüm Pozisyonlar</option><option value="forward">Forvet</option><option value="midfield">Orta Saha</option><option value="defense">Defans</option><option value="goalkeeper">Kaleci</option></select>
+        <select value={filter.rarity} onChange={(e)=>update("rarity",e.target.value)}><option value="all">Tüm Nadirlikler</option><option value="common">Sıradan</option><option value="rare">Nadir</option><option value="gold">Altın</option><option value="platinum">Platin</option><option value="epic">Epik</option><option value="legendary">Efsanevi</option><option value="icon">İkon</option><option value="elturco">El Turco</option></select>
+        <select value={filter.country} onChange={(e)=>update("country",e.target.value)}><option value="all">Tüm Milliyetler</option>{countries.map(c=><option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}</select>
+        <label className="scw-filter-check"><input type="checkbox" checked={filter.nationalOnly} onChange={(e)=>update("nationalOnly",e.target.checked)} /> 🌍 Milli Takım Oyuncuları</label>
+        <button type="button" className="secondary-button" onClick={()=>setFilter({group:"all",rarity:"all",country:"all",nationalOnly:false})}>FİLTRELERİ TEMİZLE</button>
+      </div>}
+    </div>
+  );
 }
 
 function getPlayerById(
@@ -1188,6 +1234,15 @@ function App() {
     selectedSlot,
     setSelectedSlot,
   ] = useState(null);
+
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [playerFilter, setPlayerFilter] = useState({ group:"all", rarity:"all", country:"all", nationalOnly:false });
+  const [nationalCode, setNationalCode] = useState("TR");
+  const [nationalReveal, setNationalReveal] = useState(null);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponPackId, setCouponPackId] = useState(COIN_PACKAGES[0]?.id || "");
+  const [resetText, setResetText] = useState("");
 
   const [
     trainingPlayerId,
@@ -3389,9 +3444,11 @@ function App() {
   ======================================================= */
 
   function createBattle(
-    mode
+    mode,
+    options = {}
   ) {
     if (
+      mode !== "national" &&
       game.squad.length !==
       10
     ) {
@@ -3462,6 +3519,55 @@ function App() {
         1;
     }
 
+    let playerDeck = null;
+    let nationalTeam = null;
+    let nationalOpponent = null;
+
+    if (mode === "national") {
+      nationalTeam = options.team || getNationalTeam(nationalCode);
+      const eligible = sortPlayersStrongestFirst(
+        game.collection.filter(
+          (player) =>
+            player.country === nationalTeam?.code &&
+            !player.realPlayer &&
+            !player.sold &&
+            !isPlayerBusy(player, game)
+        )
+      );
+
+      if (!nationalTeam || eligible.length < 10) {
+        showToast(
+          `${nationalTeam?.flag || "🌍"} ${nationalTeam?.name || "Milli takım"} için 10 aktif uydurma oyuncu gerekli.`,
+          "error"
+        );
+        return;
+      }
+
+      const key = `${nationalTeam.code}-${game.activeStage}`;
+      const wins = Number(game.nationalTeams?.progress?.[key] || 0);
+      if (wins >= NATIONAL_MATCH_WINS) {
+        showToast("Bu aşamanın milli takım ödülü zaten alındı.", "info");
+        return;
+      }
+
+      playerDeck = eligible.slice(0, 10);
+      matchNumber = wins + 1;
+      cap = stageCap;
+
+      const rivals = nationalTeams.filter((team) => team.code !== nationalTeam.code);
+      nationalOpponent = rivals[(wins + game.activeStage - 1) % rivals.length] || rivals[0];
+      const progress = wins / Math.max(1, NATIONAL_MATCH_WINS - 1);
+      const stageFloor = Math.max(10, stageCap - 16);
+      target = Math.round(Math.min(stageCap, stageFloor + progress * 16));
+      opponentClub = {
+        name: `${nationalOpponent.flag} ${nationalOpponent.name}`,
+        short: nationalOpponent.code,
+        crest: nationalOpponent.flag,
+        primary: "#14213d",
+        secondary: "#fca311",
+      };
+    }
+
     if (
       mode === "event"
     ) {
@@ -3506,8 +3612,22 @@ function App() {
         cap
       );
 
+    if (mode === "national") {
+      // Match the ten opposing positions to the chosen national squad so
+      // every one of the five card rounds has an available opponent.
+      opponentDeck = opponentDeck.map((player, index) => ({
+        ...player,
+        position: playerDeck[index].position,
+        positionGroup: getPositionGroup(playerDeck[index].position),
+      }));
+    }
+
     const rounds =
-      createRandomFiveRounds();
+      mode === "national" && playerDeck
+        ? shuffle(
+            playerDeck.map((player) => getPositionGroup(player.position))
+          ).slice(0, 5)
+        : createRandomFiveRounds();
 
     setBattle({
       mode,
@@ -3530,6 +3650,12 @@ function App() {
 
       opponentDeck,
 
+      playerDeck,
+
+      nationalTeam,
+
+      nationalOpponent,
+
       opponentClub,
 
       target,
@@ -3548,10 +3674,11 @@ function App() {
         missions:
           incrementMissionStat(
             previous.missions,
-            mode ===
-              "career"
+            mode === "career"
               ? "careerPlayed"
-              : "eventPlayed"
+              : mode === "event"
+                ? "eventPlayed"
+                : "nationalPlayed"
           ),
       })
     );
@@ -3724,6 +3851,11 @@ function App() {
         draw
       );
 
+      return;
+    }
+
+    if (finalBattle.mode === "national") {
+      finishNationalBattle(finalBattle, won, draw);
       return;
     }
 
@@ -4250,7 +4382,7 @@ function App() {
 
     return sortPlayersStrongestFirst(
       getAvailablePlayersForRound(
-        squadPlayers,
+        battle.playerDeck || squadPlayers,
         group,
         battle.usedPlayerIds
       )
@@ -5502,6 +5634,205 @@ function App() {
     showToast(`🎰 ${result.players.length} çekim • Son kart: ${last.name} ${last.overall} GEN`, "success");
   }
 
+  function useGenPackOnPlayer(player, packId) {
+    const gainMap = { gen1:1, gen2:2, gen4:4 };
+    const gain = gainMap[packId] || 0;
+    const count = Number(game.packs?.[packId] || 0);
+    if (!player || !gain || count <= 0) return;
+    const cap = player.chancePoolReward || player.nationalTeamReward || player.realPlayer ? 99 : stageCap;
+    const room = Math.max(0, cap - playerOverall(player));
+    if (room <= 0) { showToast(`Bu oyuncu ${cap} GEN sınırında.`, "error"); return; }
+    const actual = Math.min(room, gain);
+    if (actual < gain && !window.confirm(`Bu oyuncu en fazla ${cap} GEN olabilir. +${gain} kutusunun +${actual} GEN'i kullanılacak, +${gain-actual} GEN boşa gidecek. Onaylıyor musun?`)) return;
+    setGame(prev => ({...prev, packs:{...prev.packs,[packId]:Math.max(0,Number(prev.packs?.[packId]||0)-1)}, collection:prev.collection.map(p=>p.id===player.id?{...p,overall:Math.min(cap,playerOverall(p)+gain)}:p)}));
+    setSelectedPlayer(prev => prev?.id===player.id ? {...prev,overall:Math.min(cap,playerOverall(prev)+gain)} : prev);
+    showToast(`⚡ ${player.name} +${actual} GEN`,"success");
+  }
+
+  function coinUpgradePlayer(player) {
+    if (!player) return;
+    const cap = player.chancePoolReward || player.nationalTeamReward || player.realPlayer ? 99 : stageCap;
+    if (playerOverall(player) >= cap) { showToast(`GEN sınırı: ${cap}`,"error"); return; }
+    const cost = Math.max(250, Math.round((playerOverall(player)+1) * 45));
+    if (game.coins < cost) { showToast("Yeterli Coin yok.","error"); return; }
+    setGame(prev=>({...prev,coins:prev.coins-cost,collection:prev.collection.map(p=>p.id===player.id?{...p,overall:Math.min(cap,playerOverall(p)+1)}:p)}));
+    setSelectedPlayer(prev=>prev?.id===player.id?{...prev,overall:Math.min(cap,playerOverall(prev)+1)}:prev);
+    showToast(`⬆️ +1 GEN • 🪙${money(cost)}`,"success");
+  }
+
+  function redeemStoreCode() {
+    const code = couponCode.trim().toLocaleUpperCase("tr-TR");
+    const pack = COIN_PACKAGES.find(p=>p.id===couponPackId);
+    if (code !== "SAMSUN" || !pack) { showToast("Kod geçersiz.","error"); return; }
+    setGame(prev=>({...prev,coins:prev.coins+pack.coins,storePurchases:[...(prev.storePurchases||[]),{id:pack.id,at:Date.now(),code:true}]}));
+    setCouponCode("");
+    showToast(`🎟️ SAMSUN • +${money(pack.coins)} Coin`,"success");
+  }
+
+  function resetWholeGame() {
+    if (resetText.trim().toLocaleLowerCase("tr-TR") !== "sıfırla") { showToast('Devam etmek için "SIFIRLA" yaz.',"error"); return; }
+    if (!window.confirm("Tüm oyun ilerlemesi kalıcı olarak silinecek. Emin misin?")) return;
+    ["soccer-cards-war-save-v6","soccer-cards-war-save-v5","soccer-cards-war-save-v4","soccer-cards-war-save-v3","soccer-cards-war-save-v2"].forEach(k=>localStorage.removeItem(k));
+    window.location.reload();
+  }
+
+  function finishNationalBattle(finalBattle, won, draw) {
+    const team = finalBattle.nationalTeam;
+    if (!team) return;
+
+    if (!won) {
+      setBattle((previous) => ({
+        ...previous,
+        phase: "result",
+        finalResult: draw ? "draw" : "loss",
+      }));
+      return;
+    }
+
+    const key = `${team.code}-${game.activeStage}`;
+    const current = Number(game.nationalTeams?.progress?.[key] || 0);
+    const next = Math.min(NATIONAL_MATCH_WINS, current + 1);
+
+    if (next < NATIONAL_MATCH_WINS) {
+      setGame((previous) => ({
+        ...previous,
+        nationalTeams: {
+          ...(previous.nationalTeams || {}),
+          progress: { ...(previous.nationalTeams?.progress || {}), [key]: next },
+          rewards: previous.nationalTeams?.rewards || [],
+        },
+        missions: incrementMissionStat(previous.missions, "totalWins"),
+      }));
+      setBattle((previous) => ({ ...previous, phase: "result", finalResult: "win" }));
+      return;
+    }
+
+    const ownedNames = game.collection
+      .filter((player) => player.nationalTeamReward && player.country === team.code)
+      .map((player) => player.name);
+    const reward = makeNationalReward(team, game.activeStage, ownedNames);
+
+    setGame((previous) => ({
+      ...previous,
+      collection: reward ? [...previous.collection, reward] : previous.collection,
+      nationalTeams: {
+        ...(previous.nationalTeams || {}),
+        progress: { ...(previous.nationalTeams?.progress || {}), [key]: next },
+        rewards: reward
+          ? [...(previous.nationalTeams?.rewards || []), reward.id]
+          : previous.nationalTeams?.rewards || [],
+      },
+      missions: incrementMissionStat(previous.missions, "totalWins"),
+    }));
+
+    setBattle(null);
+    if (reward) setNationalReveal({ team, reward });
+    else showToast("Bu milli takımın gerçek oyuncu havuzu tamamlandı!", "success");
+  }
+
+  function playNationalMatch(team) {
+    createBattle("national", { team });
+  }
+
+  function chooseBestAutoEventReward(choices, collection) {
+    if (!choices?.length) return null;
+    const active = (collection || []).filter((p) => !p.sold && !isPlayerBusy(p, game));
+    const bestByGroup = {};
+    active.forEach((p) => {
+      const group = getPositionGroup(p.position);
+      bestByGroup[group] = Math.max(bestByGroup[group] || 0, playerOverall(p));
+    });
+    return [...choices].sort((a, b) => {
+      const gainA = playerOverall(a) - (bestByGroup[getPositionGroup(a.position)] || 0);
+      const gainB = playerOverall(b) - (bestByGroup[getPositionGroup(b.position)] || 0);
+      if (gainB !== gainA) return gainB - gainA;
+      return playerOverall(b) - playerOverall(a);
+    })[0];
+  }
+
+  function autoPlayEvent() {
+    const careerFinished = careerLeagues.every((league) =>
+      game.career?.completedStages?.includes(league.stage)
+    );
+    if (!careerFinished) {
+      showToast("Otomatik Etkinlik için önce Kariyerin tamamını bitir.", "error");
+      return;
+    }
+    if (game.squad.length !== 10) {
+      showToast("Önce 10 kişilik ana kadroyu tamamla.", "error");
+      return;
+    }
+
+    const event = activeEvent;
+    const initial = game.events?.[event.id];
+    if (!initial || initial.completed) return;
+
+    // Final maçı oyuncuya bırak: ör. 25 maçlık etkinlikte 24'ten sonra durur.
+    if (Number(initial.match || 1) >= event.matches) {
+      showToast(`🏆 ${event.matches}. final maçı hazır. Kadronu kontrol edip kendin başlat.`, "info");
+      return;
+    }
+
+    let match = Number(initial.match || 1);
+    let coins = game.coins;
+    let currency = Number(initial.currency || 0);
+    let collection = [...game.collection];
+    let packs = { ...game.packs };
+    let wins = 0;
+    let lost = false;
+
+    while (match < event.matches) {
+      const average = calculateAverageOverall(squadPlayers);
+      const progress = (match - 1) / Math.max(1, event.matches - 1);
+      const opponent = Math.min(event.playCap, event.min + (event.playCap - event.min) * progress);
+      const winChance = Math.max(0.12, Math.min(0.92, 0.56 + (average - opponent) * 0.035));
+      if (Math.random() > winChance) {
+        lost = true;
+        break;
+      }
+
+      const rewardCurrency = calculateEventCurrencyReward(event, match);
+      const pack = getUpgradePackReward(match, event.matches);
+      const lowMax = Math.max(event.min, Math.min(event.playCap, Math.floor(Math.max(event.min, average - 3))));
+      let choices = generateUniqueRewardChoices(event.min, lowMax, 3);
+      if (match % 3 === 0) {
+        const strongMin = Math.max(event.min, Math.min(event.playCap, Math.floor(average)));
+        const strongMax = Math.max(strongMin, Math.min(event.playCap, Math.ceil(average + 3)));
+        const strong = generatePlayer(strongMin, strongMax);
+        choices = [strong, ...generateUniqueRewardChoices(event.min, lowMax, 2, [strong])];
+      }
+      const chosen = chooseBestAutoEventReward(choices, collection);
+      if (chosen) collection.push(chosen);
+      coins += 100 + game.activeStage * 35;
+      currency += Number(rewardCurrency || 0);
+      if (pack) packs[pack] = Number(packs[pack] || 0) + 1;
+      wins += 1;
+      match += 1;
+    }
+
+    setGame((previous) => ({
+      ...previous,
+      coins,
+      collection,
+      packs,
+      events: {
+        ...previous.events,
+        [event.id]: {
+          ...previous.events[event.id],
+          match,
+          currency,
+          nextMatchAt: 0,
+        },
+      },
+      missions: wins > 0
+        ? { ...incrementMissionStat(previous.missions, "eventWins", wins) }
+        : previous.missions,
+    }));
+
+    if (lost) showToast(`⚡ Otomatik oyun ${wins} galibiyetten sonra ${match}. maçta yenildi ve durdu.`, "error");
+    else showToast(`🏆 ${wins} maç otomatik kazanıldı. ${event.matches}. final maçı sana bırakıldı.`, "success");
+  }
+
   /* ---------------- HOME ---------------- */
 
   if (
@@ -5575,7 +5906,7 @@ function App() {
               AŞAMA{" "}
               {stageStatus.stage +
                 (stageStatus.stage <
-                10
+                11
                   ? 1
                   : 0)}{" "}
               İÇİN
@@ -5702,6 +6033,10 @@ function App() {
                 }
               >
                 Etkinlik Maçı
+              </button>
+
+              <button onClick={() => openScreen("national-team")}>
+                🌍 Milli Takım
               </button>
             </div>
           </div>
@@ -5894,43 +6229,27 @@ function App() {
                       );
 
                     return (
-                      <button
-                        key={
-                          slotId
-                        }
-                        type="button"
-                        className="formation-slot"
-                        onClick={() =>
-                          setSelectedSlot(
-                            slot
-                          )
-                        }
+                      <div
+                        key={slotId}
+                        className={`formation-slot ${player ? "formation-slot-card" : ""}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedSlot(slot)}
+                        onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedSlot(slot); }}
                       >
-                        <strong>
-                          {slot.label}
-                        </strong>
-
                         {player ? (
-                          <>
-                            <span>
-                              {
-                                player.name
-                              }
-                            </span>
-
-                            <span>
-                              {
-                                player.overall
-                              }{" "}
-                              GEN
-                            </span>
-                          </>
+                          <PlayerCard
+                            player={player}
+                            compact
+                            style={{ height: "100%", pointerEvents: "none" }}
+                          />
                         ) : (
-                          <span>
-                            + Oyuncu
-                          </span>
+                          <>
+                            <strong>{slot.label}</strong>
+                            <span>+ Oyuncu</span>
+                          </>
                         )}
-                      </button>
+                      </div>
                     );
                   }
                 )}
@@ -5966,8 +6285,9 @@ function App() {
               </button>
             </div>
 
+            <FilterBar open={filterOpen} setOpen={setFilterOpen} filter={playerFilter} setFilter={setPlayerFilter} resultCount={applyPlayerFilter(ownedPlayers, playerFilter).length} />
             <div className="card-grid">
-              {ownedPlayers
+              {applyPlayerFilter(ownedPlayers, playerFilter)
                 .filter(
                   (player) => {
                     const usedInOtherSlot =
@@ -6145,8 +6465,9 @@ function App() {
           </p>
         </div>
 
+        <FilterBar open={filterOpen} setOpen={setFilterOpen} filter={playerFilter} setFilter={setPlayerFilter} resultCount={applyPlayerFilter(ownedPlayers, playerFilter).length} />
         <div className="card-grid">
-          {ownedPlayers.map(
+          {applyPlayerFilter(ownedPlayers, playerFilter).map(
             (player) => {
               const check =
                 canSendToTraining(
@@ -6287,28 +6608,17 @@ function App() {
           title={`KOLEKSİYON • ${game.collection.length}`}
         />
 
-        <div className="card-grid">
-          {sortPlayersStrongestFirst(
-            game.collection
-          ).map(
-              (player) => (
-                <PlayerCard
-                  key={
-                    player.id
-                  }
-                  player={
-                    player
-                  }
-                  status={
-                    getPlayerStatus(
-                      player,
-                      game
-                    )
-                  }
-                />
-              )
-            )}
-        </div>
+        {(() => {
+          const filtered = applyPlayerFilter(game.collection, playerFilter);
+          return <>
+            <FilterBar open={filterOpen} setOpen={setFilterOpen} filter={playerFilter} setFilter={setPlayerFilter} resultCount={filtered.length} />
+            {filtered.length ? <div className="card-grid">
+              {filtered.map((player) => (
+                <PlayerCard key={player.id} player={player} status={getPlayerStatus(player, game)} onClick={() => setSelectedPlayer(player)} />
+              ))}
+            </div> : <div className="panel"><strong>Bu filtrelere uygun oyuncunuz yok.</strong></div>}
+          </>;
+        })()}
       </section>
     );
   }
@@ -6546,8 +6856,9 @@ function App() {
                     Aktif kadrodaki, kiralıkta veya antrenmanda olan oyuncular seçilemez. Seans tamamlanınca seçilen her oyuncu +1 GEN kazanır.
                   </p>
 
-                  <div className="card-grid">
-                    {ownedPlayers.map(
+                  <FilterBar open={filterOpen} setOpen={setFilterOpen} filter={playerFilter} setFilter={setPlayerFilter} resultCount={applyPlayerFilter(ownedPlayers, playerFilter).length} />
+        <div className="card-grid">
+                    {applyPlayerFilter(ownedPlayers, playerFilter).map(
                       (player) => {
                         const check =
                           canSendToCoach(
@@ -6890,8 +7201,9 @@ function App() {
             OYUNCU SAT
           </h2>
 
+          <FilterBar open={filterOpen} setOpen={setFilterOpen} filter={playerFilter} setFilter={setPlayerFilter} resultCount={applyPlayerFilter(ownedPlayers, playerFilter).length} />
           <div className="card-grid">
-            {ownedPlayers.map(
+            {applyPlayerFilter(ownedPlayers, playerFilter).map(
               (player) => {
                 const check =
                   canSellPlayer(
@@ -7090,6 +7402,16 @@ function App() {
               </div>
             </div>
 
+            {game.rentalCenter.rentals.some(r=>!r.finished) && (
+              <>
+                <h2 style={{marginTop:18}}>💼 KİRALIK OYUNCULAR</h2>
+                <div className="card-grid">
+                  {sortPlayersStrongestFirst(game.rentalCenter.rentals.filter(r=>!r.finished).map(r=>getPlayerById(game,r.playerId)).filter(Boolean)).map(player=><PlayerCard key={player.id} player={player} compact status="KİRALIKTA" onClick={()=>setSelectedPlayer(player)} />)}
+                </div>
+                <h2 style={{marginTop:18}}>OYUNCULAR</h2>
+              </>
+            )}
+
             <div
               className="card-grid"
               style={{
@@ -7121,9 +7443,8 @@ function App() {
                       }
                     >
                       <PlayerCard
-                        player={
-                          player
-                        }
+                        player={player}
+                        onClick={() => setSelectedPlayer(player)}
                         compact
                         status={
                           rental
@@ -7460,6 +7781,19 @@ function App() {
                   )}`
                 : "⚔️ MAÇA GİR"}
           </button>
+
+          {careerLeagues.every((league) => game.career?.completedStages?.includes(league.stage)) && !state?.completed && (
+            <button
+              className="gold-button"
+              style={{ width: "100%", marginTop: 10 }}
+              disabled={Number(state?.match || 1) >= activeEvent.matches}
+              onClick={autoPlayEvent}
+            >
+              {Number(state?.match || 1) >= activeEvent.matches
+                ? `🏆 ${activeEvent.matches}. FİNAL MAÇI HAZIR`
+                : "⚡ OTOMATİK OYNA"}
+            </button>
+          )}
         </div>
 
         <div
@@ -7521,6 +7855,31 @@ function App() {
   /* ---------------- MISSIONS ---------------- */
 
   /* ---------------- CHANCE POOL ---------------- */
+
+  if (screen === "national-team") {
+    const team = getNationalTeam(nationalCode) || nationalTeams[0];
+    const key = `${team.code}-${game.activeStage}`;
+    const wins = Number(game.nationalTeams?.progress?.[key] || 0);
+    const fictional = sortPlayersStrongestFirst(game.collection.filter(p=>p.country===team.code && !p.realPlayer && !p.sold));
+    const realOwned = sortPlayersStrongestFirst(game.collection.filter(p=>p.country===team.code && p.nationalTeamReward));
+    content = <section className="screen">
+      <BackButton onClick={goHome}/>
+      <SectionHeader eyebrow="🌍 GERÇEK OYUNCU YOLU" title="MİLLİ TAKIM" />
+      <div className="panel national-team-hero">
+        <select value={nationalCode} onChange={e=>setNationalCode(e.target.value)} className="national-select">
+          {nationalTeams.map(t=><option key={t.code} value={t.code}>{t.flag} {t.name}</option>)}
+        </select>
+        <h2>{team.flag} {team.name} • AŞAMA {game.activeStage}</h2>
+        <p className="muted">Seçtiğin ülkeyi temsil edersin. Aynı milliyetten en az 10 uydurma oyuncuyla farklı milli takımlara karşı 10 maç oynarsın; rakipler maç maç güçlenir. Aşamayı bitirince temsil ettiğin ülkeden rastgele bir gerçek futbolcu kazanırsın.</p>
+        <div className="status-box"><div>Uydurma oyuncu: <strong>{fictional.length}/10</strong></div><div>Seri: <strong>{wins}/{NATIONAL_MATCH_WINS}</strong></div><div>Gerçek oyuncu: <strong>{realOwned.length}/11</strong></div></div>
+        <div className="progress-track" style={{marginTop:12}}><div className="progress-fill" style={{width:`${Math.min(100,wins/NATIONAL_MATCH_WINS*100)}%`}}/></div>
+        <button className="gold-button" style={{width:"100%",marginTop:14}} disabled={fictional.length<10 || wins>=NATIONAL_MATCH_WINS} onClick={()=>playNationalMatch(team)}>{wins>=NATIONAL_MATCH_WINS?"✅ BU AŞAMA TAMAMLANDI":"⚔️ MİLLİ MAÇA ÇIK"}</button>
+      </div>
+      {realOwned.length>0 && <><h2 style={{marginTop:18}}>⭐ KAZANDIĞIN GERÇEK OYUNCULAR</h2><div className="card-grid">{realOwned.map(player=><PlayerCard key={player.id} player={player} onClick={()=>setSelectedPlayer(player)}/>)}</div></>}
+      <h2 style={{marginTop:18}}>🇺🇳 UYGUN UYDURMA OYUNCULAR</h2>
+      <div className="card-grid">{fictional.slice(0,20).map(player=><PlayerCard key={player.id} player={player} compact onClick={()=>setSelectedPlayer(player)}/>)}</div>
+    </section>;
+  }
 
   if (screen === "chance-pool") {
     const chance = getChancePoolSummary(game.chancePool, now);
@@ -7708,19 +8067,10 @@ function App() {
           title="MAĞAZA"
         />
 
-        {STORE_TEST_MODE && (
-          <div className="panel">
-            <strong>
-              🧪 TEST PAYMENT
-              MODE
-            </strong>
-
-            <p className="muted">
-              Gerçek para
-              çekilmez.
-            </p>
-          </div>
-        )}
+        <div className="panel">
+          <strong>🔒 SATIN ALMA ŞİMDİLİK KAPALI</strong>
+          <p className="muted">Coin paketleri gerçek ödeme sistemi açılana kadar yalnızca kod ile alınabilir.</p>
+        </div>
 
         <div
           className="card-grid"
@@ -7758,19 +8108,19 @@ function App() {
                   {pack.price}
                 </p>
 
-                <button
-                  className="gold-button"
-                  onClick={() =>
-                    buyCoinPack(
-                      pack
-                    )
-                  }
-                >
-                  TEST SATIN AL
-                </button>
+                <button className="gold-button" disabled>YAKINDA</button>
               </div>
             )
           )}
+        </div>
+
+        <div className="panel" style={{marginTop:16}}>
+          <h2>🎟️ KOD İLE COIN</h2>
+          <select value={couponPackId} onChange={e=>setCouponPackId(e.target.value)} style={{width:"100%",marginBottom:10}}>
+            {COIN_PACKAGES.map(pack=><option key={pack.id} value={pack.id}>{money(pack.coins)} Coin</option>)}
+          </select>
+          <input value={couponCode} onChange={e=>setCouponCode(e.target.value)} placeholder="Kodu yaz" style={{width:"100%",marginBottom:10}} />
+          <button className="gold-button" style={{width:"100%"}} onClick={redeemStoreCode}>KODU KULLAN</button>
         </div>
 
       </section>
@@ -7930,6 +8280,13 @@ function App() {
                 : "⬇️ KURULUMU AÇ"}
           </button>
         </div>
+
+        <div className="panel danger-panel" style={{marginTop:16}}>
+          <h2>🗑️ OYUNU SIFIRLA</h2>
+          <p className="muted">Tüm oyuncular, Coinler, kariyer, etkinlik, Milli Takım ve diğer oyun ilerlemesi silinir.</p>
+          <input value={resetText} onChange={e=>setResetText(e.target.value)} placeholder='Devam etmek için "SIFIRLA" yaz' style={{width:"100%",marginBottom:10}} />
+          <button className="danger-button" style={{width:"100%"}} disabled={resetText.trim().toLocaleLowerCase("tr-TR")!=="sıfırla"} onClick={resetWholeGame}>OYUNU SIFIRLA</button>
+        </div>
       </section>
     );
   }
@@ -8003,6 +8360,36 @@ function App() {
           {content}
         </div>
       </main>
+
+      {selectedPlayer && (() => {
+        const live = game.collection.find(p=>p.id===selectedPlayer.id) || selectedPlayer;
+        const rental = game.rentalCenter?.rentals?.find(r=>r.playerId===live.id && !r.finished);
+        const packButtons = [["gen1",1],["gen2",2],["gen4",4]];
+        return <div className="scw-modal-backdrop" onClick={()=>setSelectedPlayer(null)}>
+          <div className="scw-player-modal" onClick={e=>e.stopPropagation()}>
+            <button className="scw-modal-close" onClick={()=>setSelectedPlayer(null)}>✕</button>
+            <div style={{maxWidth:220,margin:"0 auto 14px"}}><PlayerCard player={live}/></div>
+            <h2>⬆️ OYUNCUYU YÜKSELT</h2>
+            <p className="muted">Mevcut: {playerOverall(live)} GEN • Sınır: {live.chancePoolReward||live.nationalTeamReward||live.realPlayer?99:stageCap}</p>
+            <div className="scw-action-grid">
+              {packButtons.map(([id,gain])=><button key={id} className="secondary-button" disabled={!Number(game.packs?.[id]||0)} onClick={()=>useGenPackOnPlayer(live,id)}>📦 +{gain} GEN × {Number(game.packs?.[id]||0)}</button>)}
+              <button className="gold-button" onClick={()=>coinUpgradePlayer(live)}>🪙 COIN İLE +1 GEN</button>
+            </div>
+            <hr style={{opacity:.15,margin:"18px 0"}}/>
+            {rental ? <button className="primary-button" style={{width:"100%"}} onClick={()=>{recallRental(rental);setSelectedPlayer(null)}}>↩️ KİRALIKTAN GERİ ÇAĞIR</button> : <button className="primary-button" style={{width:"100%"}} onClick={()=>{if(window.confirm(`${live.name} kiraya verilsin mi?`)){rentPlayer(live);setSelectedPlayer(null)}}}>💼 OYUNCUYU KİRALA</button>}
+          </div>
+        </div>;
+      })()}
+
+      {nationalReveal && <div className="national-reveal">
+        <div className="national-reveal-glow" />
+        <div className="national-reveal-flag">{nationalReveal.team.flag}</div>
+        <div className="national-reveal-position">{nationalReveal.reward.position}</div>
+        <div className="national-reveal-card"><PlayerCard player={nationalReveal.reward}/></div>
+        <h1>{nationalReveal.reward.name}</h1>
+        <p>{nationalReveal.reward.overall} GEN • GERÇEK MİLLİ TAKIM OYUNCUSU</p>
+        <button className="gold-button" onClick={()=>setNationalReveal(null)}>KADROYA KAT 🔥</button>
+      </div>}
 
       {toast && (
         <div
